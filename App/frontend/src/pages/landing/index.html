@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="../../styles/pages/landing.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/>
+    <title>ElevateX</title>
+</head>
+<body>
+    <!-- slider -->
+    <section class="slider">
+        <!-- header -->
+        <header>
+            <a href="#" class="logo">ElevateX</a>
+            <nav class="menu">
+                <a href="#">Home</a></li>
+                <a href="#">About</a></li>
+                <a href="#" id="navbar-register">Register</a></li>
+            </nav>           
+        </header>
+        <!-- list of items -->
+        <div class="list">
+            <div class="item active">
+                <img src="../../../public/graphics/slider/landing-.JPG">
+                <div class="content">
+                    <p>Welcome to</p>
+                    <h2>ElevateX</h2>
+                    <p> Your secure gateway to innovation and collaboration.
+                        High Stake Investing and Pitching Platform.</p>
+                </div>
+            </div>
+            <div class="item">
+                <img src="../../../public/graphics/slider/about.png">
+                <div class="content">
+                    <p>About</p>
+                    <h2>ElevateX</h2>
+                    <p> is a secure, 
+                        intermediary-free investment and pitching platform designed to 
+                        connect investors, inventors, and researchers. It facilitates 
+                        direct collaboration without the need for venture capital firms or accelerators.
+                        It provides a trusted space for collaboration, where entrepreneurs can present 
+                        their innovations, investors can explore high-potential projects, and researchers 
+                        can offer technical validation. 
+                        The platform prioritises intellectual property protection, 
+                        secure document sharing, and encrypted communication, 
+                        ensuring that sensitive business information remains confidential. 
+                        Unlike crowdfunding platforms, ElevateX does not process financial 
+                        transactions but provides a trusted space for startup evaluation and networking,
+                        ensuring intellectual property protection and data security.
+                        </p>
+                </div>
+            </div>
+            <div class="item">
+                <img src="../../../public/graphics/slider/how.jpg">
+                <div class="content">
+                    How it works
+                </div>
+            </div>
+            <div class="item">
+                <img src="../../../public/graphics/slider/inventor2.jpg">
+                <div class="content">
+                    <p>Inventors</p>
+                    <h2>Pitch Your Idea</h2>
+                    <p>ElevateX provides a secure and direct platform for inventors 
+                        to showcase their ideas to potential investors and researchers. 
+                        Protect your intellectual property, share detailed project insights,
+                        and connect with experts who can validate and support your innovation. 
+                        With controlled document access, encrypted communication, 
+                        and a trusted network, ElevateX ensures your ideas are presented 
+                        professionally while remaining secure. 
+                        Get the visibility and backing you need to turn your vision into reality.</p>
+                </div>
+            </div>
+            <div class="item">
+                <img src="../../../public/graphics/slider/investor2.jpg">
+                <div class="content">
+                    <p>Investors</p>
+                    <h2>Find a Project</h2>
+                    <p>ElevateX offers exclusive access to a curated selection of innovative projects, 
+                        connecting you directly with inventors and researchers. 
+                        Evaluate groundbreaking ideas, request secure access to key documents, 
+                        and engage in confidential discussions to assess investment potential. 
+                        With encrypted communication and intellectual property protection, 
+                        ElevateX ensures a transparent and secure environment for informed decision-making. 
+                        Find your next investment opportunity with confidence. </p>
+                </div>
+            </div>
+            <div class="item">
+                <img src="../../../public/graphics/slider/researcher2.jpg">
+                <div class="content">
+                    <p>Researchers</p>
+                    <h2>Contribute</h2>
+                    <p>ElevateX provides a collaborative space where researchers can contribute 
+                        their expertise to cutting-edge projects, helping to validate ideas and 
+                        enhance their credibility. Work directly with inventors and investors 
+                        to assess technical feasibility, market potential, and innovation impact. 
+                        With secure document access and protected communication, 
+                        ElevateX ensures a trusted environment for meaningful contributions 
+                        and industry connections. Play a vital role in shaping the future of 
+                        innovation.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login wrapper -->
+        <div class="login-wrapper">
+            <p>Member Login</p>
+            <form action="#">
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-envelope"></i>
+                    </span>
+                    <input type="email" required>
+                    <label>Enter your email</label>
+                </div>
+                <div class="input-box">
+                    <span class="icon"><i class="fa-solid fa-lock"></i></span>
+                    <input type="password" required>
+                    <label>Enter your password</label>
+                </div>
+                <div class="remember-forgot">
+                    <label><input type="checkbox">Remember me</label>
+                    <a href="#">Forgot password?</a>
+                </div>
+                <button type="submit" class="btn">Login</button>
+                <div class="register-link">
+                    <p>Not a member? <a href="#" id="show-register">Sign up</a></p>
+                </div>
+            </form>
+        </div>
+
+        <!-- Registration wrapper -->
+        <div class="register-wrapper">
+            <p>Create Account</p>
+            <form action="#">
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-user"></i>
+                    </span>
+                    <input type="text" required>
+                    <label>First Name</label>
+                </div>
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-user"></i>
+                    </span>
+                    <input type="text" required>
+                    <label>Last Name</label>
+                </div>
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-envelope"></i>
+                    </span>
+                    <input type="email" required>
+                    <label>Email</label>
+                    <i class='bx bxs-envelope icon'></i>
+                </div>
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-calendar"></i>
+                    </span>
+                    <input type="date" required>
+                    <label>Date of Birth</label>
+                </div>
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-lock"></i>
+                    </span>
+                    <input type="password" required>
+                    <label>Password</label>
+                    <i class='bx bxs-lock-alt icon'></i>
+                </div>
+                <div class="input-box">
+                    <span class="icon">
+                        <i class="fa-solid fa-lock"></i>
+                    </span>
+                    <input type="password" required>
+                    <label>Confirm Password</label>
+                    <i class='bx bxs-lock-alt icon'></i>
+                </div>
+                <div class="role-select">
+                    <span class="icon">
+                        <i class="fa-solid fa-user-tie"></i>
+                    </span>
+                    <select required>
+                        <option value="">Select Role</option>
+                        <option value="inventor">Inventor</option>
+                        <option value="investor">Investor</option>
+                        <option value="researcher">Researcher</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn">Register</button>
+                <div class="login-link">
+                    <p>Already have an account? <a href="#" id="show-login">Login</a></p>
+                </div>
+            </form>
+        </div>
+
+        <!-- thumbnails -->
+        <div class="arrows">
+            <button id="prev" class="prev"><</button>
+            <button id="next" class="next">></button>
+        </div> 
+        <div class="swiper">
+            <!-- Additional required wrapper -->
+            <div class="swiper-wrapper">
+            <!-- Slides -->
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/landing-.JPG">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>Home</span>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/about.png">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>About</span>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/how.jpg">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>How it works</span>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/inventor2.jpg">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>Inventors</span>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/investor2.jpg">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>Investors</span>
+                    </div>
+                </div>
+                <div class="swiper-slide">
+                    <img src="../../../public/graphics/slider/researcher2.jpg">
+                    <div class="overlay"></div>
+                    <div class="title">
+                        <span>Researchers</span>
+                    </div>
+                </div>
+            </div>
+    </section>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <script type="module" src="../../scripts/pages/landing.js"></script>
+    <script type="module" src="../../scripts/pages/auth.js"></script>
+</body>
+</html>
