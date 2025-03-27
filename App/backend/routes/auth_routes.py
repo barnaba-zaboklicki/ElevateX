@@ -68,8 +68,8 @@ def login():
     user.last_login = datetime.now(timezone.utc)
     db.session.commit()
     
-    # Create access token
-    access_token = create_access_token(identity=user.id)
+    # Create access token with string user ID
+    access_token = create_access_token(identity=str(user.id))
     
     return jsonify({
         'message': 'Login successful',

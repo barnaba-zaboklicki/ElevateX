@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect
+from flask import Flask, request, jsonify, redirect, make_response
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from datetime import timedelta
@@ -31,8 +31,10 @@ jwt = JWTManager(app)
 CORS(app, 
      origins=["https://127.0.0.1:3000", "https://localhost:3000"],
      supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-     expose_headers=["Content-Type", "Authorization"]
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+     expose_headers=["Content-Type", "Authorization"],
+     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     max_age=3600
 )
 
 # Add security headers to all responses
@@ -44,12 +46,25 @@ def add_security_headers(response):
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+        response.headers['Access-Control-Max-Age'] = '3600'
     
     # Add other security headers
     for header, value in SECURITY_HEADERS.items():
         response.headers[header] = value
     return response
+
+# Handle OPTIONS requests for all routes
+@app.before_request
+def handle_options():
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Max-Age', '3600')
+        return response
 
 # Error handling
 @app.errorhandler(Exception)
@@ -61,8 +76,11 @@ def handle_error(error):
     }), 500
 
 # Routes
-@app.route('/')
+@app.route('/', methods=['GET', 'OPTIONS'])
 def root():
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     # Get the host from the request
     host = request.headers.get('Host', '').split(':')[0]
     if host == '127.0.0.1':

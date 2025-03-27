@@ -27,9 +27,8 @@ const authService = {
             
             // Store the token in localStorage
             if (data.token) {
-                // Ensure token is properly formatted
-                const token = data.token.trim();
-                localStorage.setItem('token', token);
+                // Store token without Bearer prefix
+                localStorage.setItem('token', data.token.trim());
                 localStorage.setItem('user', JSON.stringify(data.user));
                 console.log('Login successful, token stored'); // Debug log
             }
@@ -52,7 +51,7 @@ const authService = {
             console.log('Sending profile request with token:', token); // Debug log
             return await fetchAPI(`${AUTH_BASE_URL}/profile`, {
                 headers: {
-                    'Authorization': `Bearer ${token.trim()}`, // Ensure token is trimmed
+                    'Authorization': `Bearer ${token}`,
                 },
             });
         } catch (error) {

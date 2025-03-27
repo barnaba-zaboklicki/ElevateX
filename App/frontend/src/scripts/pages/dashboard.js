@@ -213,18 +213,78 @@ async function handleIdeaSubmission(e) {
     
     const form = e.target;
     const formData = new FormData(form);
+    const token = localStorage.getItem('token');
+    
+    if (!token) {
+        alert('You are not logged in. Please log in again.');
+        window.location.href = '../landing/index.html';
+        return;
+    }
+    
+    // Validate required fields
+    const title = formData.get('title')?.trim();
+    const description = formData.get('description')?.trim();
+    const technical_details = formData.get('technical_details')?.trim();
+    const patent_status = formData.get('patent_status');
+    const funding_status = formData.get('funding_status');
+    
+    if (!title || !description || !technical_details || !patent_status || !funding_status) {
+        alert('Please fill in all required fields');
+        return;
+    }
     
     try {
-        const response = await fetch('/api/ideas', {
+        // Create a new FormData object for the request
+        const requestData = new FormData();
+        
+        // Add text fields
+        requestData.append('title', title);
+        requestData.append('description', description);
+        requestData.append('technical_details', technical_details);
+        requestData.append('patent_status', patent_status);
+        requestData.append('funding_status', funding_status);
+        
+        // Add files if they exist
+        const files = formData.getAll('attachments');
+        files.forEach(file => {
+            requestData.append('attachments', file);
+        });
+        
+        // Debug logging
+        console.log('Form data entries:');
+        for (let [key, value] of requestData.entries()) {
+            console.log(`${key}:`, value);
+        }
+        
+        // Debug log the token
+        console.log('Using token:', token);
+        
+        const response = await fetch('https://127.0.0.1:5000/api/inventions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
             },
-            body: formData
+            credentials: 'include',
+            body: requestData
         });
 
         if (!response.ok) {
-            throw new Error('Failed to submit idea');
+            if (response.status === 401) {
+                // Token expired or invalid
+                const errorData = await response.json();
+                console.error('Authentication error:', errorData);
+                
+                // Clear user data and redirect to login
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                alert('Your session has expired. Please log in again.');
+                window.location.href = '../landing/index.html';
+                return;
+            }
+            const errorData = await response.json();
+            console.error('Server error response:', errorData);
+            throw new Error(errorData.message || errorData.msg || 'Failed to submit idea');
         }
 
         const result = await response.json();
@@ -239,6 +299,25 @@ async function handleIdeaSubmission(e) {
     } catch (error) {
         console.error('Error submitting idea:', error);
         alert('Failed to submit idea. Please try again.');
+    }
+}
+
+// Function to check token expiration
+function checkTokenExpiration() {
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+    
+    try {
+        // Decode the JWT token (it's base64 encoded)
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const expiration = payload.exp * 1000; // Convert to milliseconds
+        const now = Date.now();
+        
+        // If token expires in less than 5 minutes, consider it expired
+        return now < expiration - 300000;
+    } catch (error) {
+        console.error('Error checking token expiration:', error);
+        return false;
     }
 }
 
@@ -411,9 +490,11 @@ function handleMenuClick(menuId) {
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
-    // Check if user is logged in
+    // Check if user is logged in and token is valid
     const token = localStorage.getItem('token');
-    if (!token) {
+    if (!token || !checkTokenExpiration()) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         window.location.href = '../landing/index.html';
         return;
     }
