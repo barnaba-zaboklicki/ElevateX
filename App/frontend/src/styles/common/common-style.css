@@ -157,18 +157,20 @@ main p{
 }
 
 .container{
-    background: var(--base-clr);
-    padding: min(3em, 15%);
+    background: linear-gradient(135deg, var(--base-clr) 0%, var(--hover-clr) 100%);
     border-radius: 1em;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     border: 1px solid var(--line-clr);
-    margin-bottom: 20px;
 }
 
 .container h2 {
-    margin-top: 0;
     color: var(--text-clr);
-    font-size: 1.5rem;
-    margin-bottom: 1rem;
+    font-size: 1.8rem;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    text-align: center;
 }
 
 .container p {
@@ -205,6 +207,29 @@ main p{
 .dashboard-sections {
     display: grid;
     gap: 2rem;
+}
+
+.dashboard-sections .container {
+    background: linear-gradient(135deg, var(--base-clr) 0%, var(--hover-clr) 100%);
+    border-radius: 1em;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--line-clr);
+}
+
+.dashboard-sections .container h2 {
+    color: var(--text-clr);
+    font-size: 1.8rem;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.dashboard-sections .container p {
+    color: var(--secondary-text-clr);
+    line-height: 1.6;
+    margin: 1em 0 0 0;
 }
 
 @media(max-width:768px){
@@ -294,5 +319,144 @@ main p{
 
     .container {
         padding: 1.5rem;
+    }
+}
+
+/* Form Styles */
+.idea-form {
+    padding: 3rem;
+    border-radius: 1em;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-width: 1000px;
+    margin: 2rem auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-group {
+    margin-bottom: 2.5rem;
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.75rem;
+    color: var(--text-clr);
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 1.2rem;
+    border: 2px solid var(--line-clr);
+    border-radius: 0.5em;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background-color: var(--base-clr);
+    color: var(--text-clr);
+    box-sizing: border-box;
+}
+
+.form-group input[type="text"]:hover,
+.form-group textarea:hover,
+.form-group select:hover {
+    border-color: var(--accent-clr);
+}
+
+.form-group input[type="text"]:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: var(--accent-clr);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 94, 58, 0.2);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 150px;
+    line-height: 1.6;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 0.75rem;
+    color: var(--secondary-text-clr);
+    font-size: 0.875rem;
+}
+
+.form-group input[type="file"] {
+    width: 100%;
+    padding: 1.2rem;
+    border: 2px dashed var(--line-clr);
+    border-radius: 0.5em;
+    background-color: var(--base-clr);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: var(--text-clr);
+    box-sizing: border-box;
+}
+
+.form-group input[type="file"]:hover {
+    border-color: var(--accent-clr);
+}
+
+.selected-files {
+    margin-top: 1rem;
+    padding: 1.2rem;
+    background: var(--base-clr);
+    border-radius: 0.5em;
+    min-height: 3rem;
+    border: 1px solid var(--line-clr);
+    box-sizing: border-box;
+}
+
+.submit-button {
+    background: var(--accent-clr);
+    color: var(--text-clr);
+    padding: 1.2rem 2rem;
+    border: none;
+    border-radius: 0.5em;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    margin-top: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-sizing: border-box;
+}
+
+.submit-button:hover {
+    background: #ff4a2a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.submit-button:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+@media(max-width:768px){
+    .idea-form {
+        padding: 1.5rem;
+        margin: 1rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-group input[type="text"],
+    .form-group textarea,
+    .form-group select,
+    .form-group input[type="file"] {
+        padding: 1rem;
     }
 }

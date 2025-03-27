@@ -1,0 +1,27 @@
+/* Active Menu Item */
+#sidebar a.active {
+    background-color: #ffd700;
+    color: #000;
+}
+
+#sidebar a.active svg {
+    fill: #000;
+}
+
+/* Container styles for the form section */
+.container {
+    background: var(--base-clr);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--line-clr);
+}
+
+.container h2 {
+    color: var(--text-clr);
+    font-size: 1.8rem;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+} 

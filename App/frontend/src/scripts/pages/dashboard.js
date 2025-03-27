@@ -38,6 +38,12 @@ const roleConfigs = {
         title: 'Inventor Dashboard',
         menuItems: [
             {
+                id: 'addProject',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg>',
+                text: 'Add New Project',
+                href: '#'
+            },
+            {
                 id: 'myInventions',
                 icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160Z"/></svg>',
                 text: 'My Inventions',
@@ -108,13 +114,15 @@ function loadDashboardContent(role) {
     const user = JSON.parse(localStorage.getItem('user'));
     const firstName = user ? user.first_name : '';
     
-    contentDiv.innerHTML = `
+    let content = `
         <div class="welcome-section">
             <h1>Welcome, ${firstName}!</h1>
             <h2>${roleConfigs[role].title}</h2>
         </div>
-        <div class="dashboard-sections">
-            <!-- Existing content will be preserved -->
+        <div class="dashboard-sections">`;
+
+    // Add common dashboard content
+    content += `
             <div class="container">
                 <h2>Hello World</h2>
                 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit...</p>
@@ -129,37 +137,312 @@ function loadDashboardContent(role) {
             </div>
         </div>
     `;
+    
+    contentDiv.innerHTML = content;
+}
+
+// Function to handle logout
+function handleLogout() {
+    // Clear user data from localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    
+    // Redirect to login page
+    window.location.href = '../landing/index.html';
+}
+
+// Function to create idea submission form
+function createIdeaSubmissionForm() {
+    return `
+        <form id="ideaSubmissionForm" class="idea-form">
+            <div class="form-group">
+                <label for="title">Title</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" name="description" rows="4" required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="technical_details">Technical Details</label>
+                <textarea id="technical_details" name="technical_details" rows="4" required></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="patent_status">Patent Status</label>
+                <select id="patent_status" name="patent_status" required>
+                    <option value="">Select status</option>
+                    <option value="not_filed">Not Filed</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="granted">Granted</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="funding_status">Funding Status</label>
+                <select id="funding_status" name="funding_status" required>
+                    <option value="">Select status</option>
+                    <option value="not_requested">Not Requested</option>
+                    <option value="requested">Requested</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="attachments">Attachments</label>
+                <input type="file" id="attachments" name="attachments" multiple
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png">
+                <small>Max file size: 10MB each (50MB total)</small>
+                <div id="selectedFiles" class="selected-files"></div>
+            </div>
+            
+            <button type="submit" class="submit-button">
+                Submit Invention
+            </button>
+        </form>
+    `;
+}
+
+// Function to handle idea submission
+async function handleIdeaSubmission(e) {
+    e.preventDefault();
+    
+    const form = e.target;
+    const formData = new FormData(form);
+    
+    try {
+        const response = await fetch('/api/ideas', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to submit idea');
+        }
+
+        const result = await response.json();
+        alert('Idea submitted successfully!');
+        form.reset();
+        
+        // Clear selected files display
+        const selectedFilesDiv = document.getElementById('selectedFiles');
+        if (selectedFilesDiv) {
+            selectedFilesDiv.innerHTML = '';
+        }
+    } catch (error) {
+        console.error('Error submitting idea:', error);
+        alert('Failed to submit idea. Please try again.');
+    }
+}
+
+// Function to handle menu item click
+function handleMenuClick(menuId) {
+    const contentDiv = document.getElementById('dashboard-content');
+    const user = JSON.parse(localStorage.getItem('user'));
+    
+    // Remove active class from all menu items
+    document.querySelectorAll('#sidebar li').forEach(li => {
+        li.classList.remove('active');
+    });
+    
+    // Add active class to clicked menu item's parent li
+    const activeLink = document.querySelector(`#sidebar a[data-menu="${menuId}"]`);
+    if (activeLink) {
+        activeLink.parentElement.classList.add('active');
+    }
+
+    // Handle different menu items
+    if (menuId === 'home') {
+        // Load default dashboard content
+        loadDashboardContent(user.role);
+    } else if (user.role === 'inventor') {
+        switch (menuId) {
+            case 'addProject':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Submit New Invention</h2>
+                            ${createIdeaSubmissionForm()}
+                        </div>
+                    </div>
+                `;
+                
+                // Add event listener for the form
+                const form = document.getElementById('ideaSubmissionForm');
+                if (form) {
+                    form.addEventListener('submit', handleIdeaSubmission);
+                }
+                break;
+            case 'myInventions':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>My Inventions</h2>
+                            <p>Your inventions will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'patents':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Patents</h2>
+                            <p>Your patents will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+        }
+    } else if (user.role === 'investor') {
+        switch (menuId) {
+            case 'projects':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>My Projects</h2>
+                            <p>Your investment projects will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'requests':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Investment Requests</h2>
+                            <p>Investment requests will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+        }
+    } else if (user.role === 'admin') {
+        switch (menuId) {
+            case 'users':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Users Management</h2>
+                            <p>User management interface will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'security':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Security Logs</h2>
+                            <p>Security logs will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+        }
+    } else if (user.role === 'researcher') {
+        switch (menuId) {
+            case 'research':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Research Projects</h2>
+                            <p>Your research projects will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'publications':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Publications</h2>
+                            <p>Your publications will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+        }
+    }
 }
 
 // Initialize dashboard
-function initDashboard() {
-    const role = getUserRole();
-    if (!role) {
-        window.location.href = '../auth/login.html';
+document.addEventListener('DOMContentLoaded', () => {
+    // Check if user is logged in
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '../landing/index.html';
         return;
     }
 
-    loadRoleSpecificMenu(role);
-    loadDashboardContent(role);
-
-    // Add event listener for logout
-    document.getElementById('logoutBtn').addEventListener('click', (e) => {
-        e.preventDefault();
-        localStorage.removeItem('user');
-        localStorage.removeItem('token');
-        window.location.href = '../landing/index.html';
-    });
+    // Get user role and load appropriate content
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (user) {
+        loadRoleSpecificMenu(user.role);
+        loadDashboardContent(user.role);
+        
+        // Set initial active menu item (first item)
+        const firstMenuItem = document.querySelector('#sidebar a[data-menu]');
+        if (firstMenuItem) {
+            firstMenuItem.parentElement.classList.add('active');
+        }
+    }
 
     // Add event listeners for menu items
-    document.querySelectorAll('[data-menu]').forEach(menuItem => {
-        menuItem.addEventListener('click', (e) => {
+    document.querySelectorAll('#sidebar a[data-menu]').forEach(link => {
+        link.addEventListener('click', (e) => {
             e.preventDefault();
-            const menuId = menuItem.getAttribute('data-menu');
-            // Handle menu item clicks (to be implemented)
-            console.log(`Menu item clicked: ${menuId}`);
+            const menuId = e.currentTarget.getAttribute('data-menu');
+            handleMenuClick(menuId);
         });
     });
-}
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', initDashboard); 
+    // Add event listener for logout button
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+}); 
