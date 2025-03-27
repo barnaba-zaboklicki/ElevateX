@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from models.invention import Invention
 from models.document import Document
 from database import db
-from utils.s3_utils import upload_file_to_s3
+from utils.s3_utils import upload_file_to_s3, delete_file_from_s3
 import os
 from models.user import User
 
@@ -90,6 +90,7 @@ def create_invention():
                         invention_id=new_invention.id,
                         filename=file.filename,
                         file_path=s3_result['url'],
+                        s3_key=s3_result['s3_key'],  # Store the S3 key
                         file_type=file.content_type,
                         file_size=os.path.getsize(file_path),
                         uploaded_by=current_user_id,
@@ -208,7 +209,7 @@ def update_invention(invention_id):
 @jwt_required()
 def delete_invention(invention_id):
     """Delete a specific invention."""
-    current_user_id = get_jwt_identity()
+    current_user_id = int(get_jwt_identity())  # Convert string ID to integer
     try:
         invention = Invention.query.get(invention_id)
         
@@ -219,6 +220,40 @@ def delete_invention(invention_id):
         if invention.inventor_id != current_user_id:
             return jsonify({'message': 'Unauthorized'}), 403
         
+        # Get password from request body
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'message': 'Password is required'}), 400
+        
+        # Get user and verify password
+        user = User.query.get(current_user_id)
+        if not user or not user.verify_password(password):
+            return jsonify({'message': 'Invalid password'}), 401
+        
+        # Delete associated documents from S3 if any
+        documents = Document.query.filter_by(invention_id=invention_id).all()
+        print(f"Found {len(documents)} documents to delete")  # Debug log
+        
+        for document in documents:
+            try:
+                print(f"Attempting to delete document: {document.filename}")  # Debug log
+                print(f"S3 key: {document.s3_key}")  # Debug log
+                
+                # Delete from S3 using the stored key
+                s3_result = delete_file_from_s3(document.s3_key)
+                if not s3_result['success']:
+                    print(f"Warning: Failed to delete file from S3: {s3_result['message']}")
+                    # Continue with deletion even if S3 deletion fails
+                
+                # Delete document record
+                db.session.delete(document)
+            except Exception as e:
+                print(f"Warning: Error deleting document: {str(e)}")
+                # Continue with deletion even if document deletion fails
+        
+        # Delete the invention
         db.session.delete(invention)
         db.session.commit()
         
@@ -227,6 +262,7 @@ def delete_invention(invention_id):
         }), 200
     except Exception as e:
         db.session.rollback()
+        print(f"Error deleting invention: {str(e)}")  # Debug log
         return jsonify({
             'message': 'Failed to delete invention',
             'error': str(e)

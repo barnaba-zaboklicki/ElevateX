@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from database import db
+import bcrypt
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -33,4 +34,16 @@ class User(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
-        } 
+        }
+    
+    def verify_password(self, password):
+        """
+        Verify a password against the stored hash.
+        
+        Args:
+            password: The password to verify
+            
+        Returns:
+            bool: True if the password matches, False otherwise
+        """
+        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8')) 

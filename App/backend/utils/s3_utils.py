@@ -45,7 +45,8 @@ def upload_file_to_s3(file_obj, filename, content_type):
             'success': True,
             'message': 'File uploaded successfully',
             'filename': filename,
-            'url': url
+            'url': url,
+            's3_key': filename  # Store the S3 key for later use
         }
     
     except ClientError as e:
@@ -103,17 +104,47 @@ def delete_file_from_s3(filename):
         s3_client = get_s3_client()
         bucket_name = os.getenv('S3_BUCKET_NAME', 'elevatex-inventions')
         
+        print(f"Attempting to delete file from S3: {filename} in bucket: {bucket_name}")  # Debug log
+        
+        # Extract the key from the S3 URL
+        if 'amazonaws.com' in filename:
+            # If it's a full URL, extract the key after the bucket name
+            key = filename.split(bucket_name + '/')[1]
+        else:
+            # If it's already a key, use it as is
+            key = filename
+        
+        print(f"Extracted S3 key: {key}")  # Debug log
+        
+        # Check if file exists before attempting deletion
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=key)
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                print(f"File not found in S3: {key}")  # Debug log
+                return {
+                    'success': True,
+                    'message': 'File not found in S3',
+                    'filename': key
+                }
+            else:
+                raise
+        
+        # Delete the file
         s3_client.delete_object(
             Bucket=bucket_name,
-            Key=filename
+            Key=key
         )
+        
+        print(f"Successfully deleted file from S3: {key}")  # Debug log
         
         return {
             'success': True,
             'message': 'File deleted successfully',
-            'filename': filename
+            'filename': key
         }
     except Exception as e:
+        print(f"Error deleting file from S3: {str(e)}")  # Debug log
         return {
             'success': False,
             'message': str(e)

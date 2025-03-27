@@ -280,4 +280,87 @@
     border-radius: 8px;
     font-family: monospace;
     font-size: 0.9em;
+}
+
+.card-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.delete-invention-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.delete-invention-btn:hover {
+    background-color: #c82333;
+}
+
+/* Password Confirmation Modal Styles */
+#passwordConfirmationModal .modal-content {
+    max-width: 400px;
+}
+
+#passwordConfirmationModal .modal-body {
+    padding: 20px;
+}
+
+#passwordConfirmationModal .form-group {
+    margin-bottom: 20px;
+}
+
+#passwordConfirmationModal .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #e0e0e0;
+}
+
+#passwordConfirmationModal .form-group input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+}
+
+#passwordConfirmationModal .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#passwordConfirmationModal .cancel-btn {
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#passwordConfirmationModal .cancel-btn:hover {
+    background-color: #5a6268;
+}
+
+#passwordConfirmationModal .confirm-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+#passwordConfirmationModal .confirm-btn:hover {
+    background-color: #c82333;
 } 

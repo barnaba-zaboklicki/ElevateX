@@ -436,6 +436,10 @@ async function handleInventionSubmission(inventionId) {
 
 // Function to create invention card HTML
 function createInventionCard(invention) {
+    const user = JSON.parse(localStorage.getItem('user'));
+    const isInventor = user.role === 'inventor';
+    const isOwner = invention.inventor_id === parseInt(user.id);
+
     return `
         <div class="invention-card" data-invention-id="${invention.id}">
             <h3>${invention.title}</h3>
@@ -446,11 +450,137 @@ function createInventionCard(invention) {
                 <span class="status">Status: ${invention.status}</span>
                 <span class="date">Created: ${new Date(invention.created_at).toLocaleDateString()}</span>
             </div>
-            ${invention.status === 'draft' ? `
-                <button class="submit-invention-btn">Submit for Review</button>
-            ` : ''}
+            <div class="card-actions">
+                ${invention.status === 'draft' ? `
+                    <button class="submit-invention-btn">Submit for Review</button>
+                ` : ''}
+                ${isInventor && isOwner ? `
+                    <button class="delete-invention-btn">Delete Project</button>
+                ` : ''}
+            </div>
         </div>
     `;
+}
+
+// Function to create password confirmation modal
+function createPasswordConfirmationModal() {
+    return `
+        <div class="modal" id="passwordConfirmationModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">Confirm Deletion</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Please enter your password to confirm deletion of this project.</p>
+                    <form id="passwordConfirmationForm">
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input type="password" id="password" name="password" required>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="cancel-btn">Cancel</button>
+                            <button type="submit" class="confirm-btn">Confirm Delete</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Function to handle invention deletion
+async function handleInventionDeletion(inventionId, password) {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No authentication token found');
+    }
+
+    try {
+        const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ password }),
+            rejectUnauthorized: false
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Server error:', errorData);
+            throw new Error(errorData.message || 'Failed to delete invention');
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error deleting invention:', error);
+        throw error;
+    }
+}
+
+// Function to handle password confirmation modal
+function handlePasswordConfirmationModal(inventionId) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('passwordConfirmationModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    // Add new modal to body
+    document.body.insertAdjacentHTML('beforeend', createPasswordConfirmationModal());
+
+    // Get modal elements
+    const modal = document.getElementById('passwordConfirmationModal');
+    const closeBtn = modal.querySelector('.modal-close');
+    const cancelBtn = modal.querySelector('.cancel-btn');
+    const form = document.getElementById('passwordConfirmationForm');
+
+    // Show modal
+    modal.style.display = 'block';
+
+    // Handle form submission
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = form.querySelector('#password').value;
+
+        try {
+            await handleInventionDeletion(inventionId, password);
+            alert('Project deleted successfully!');
+            modal.style.display = 'none';
+            // Refresh the inventions list
+            handleMenuClick('myInventions');
+        } catch (error) {
+            alert(error.message || 'Failed to delete project. Please try again.');
+        }
+    });
+
+    // Close modal when clicking close button
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    // Close modal when clicking cancel button
+    cancelBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    });
 }
 
 // Function to create modal HTML
@@ -732,8 +862,9 @@ async function handleMenuClick(menuId) {
                     // Add click event listeners to cards
                     document.querySelectorAll('.invention-card').forEach(card => {
                         card.addEventListener('click', async (e) => {
-                            // Don't trigger modal if clicking submit button
-                            if (e.target.classList.contains('submit-invention-btn')) {
+                            // Don't trigger modal if clicking action buttons
+                            if (e.target.classList.contains('submit-invention-btn') || 
+                                e.target.classList.contains('delete-invention-btn')) {
                                 return;
                             }
                             
@@ -783,6 +914,15 @@ async function handleMenuClick(menuId) {
                             } catch (error) {
                                 alert('Failed to submit invention. Please try again.');
                             }
+                        });
+                    });
+
+                    // Add click event listeners to delete buttons
+                    document.querySelectorAll('.delete-invention-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation(); // Prevent card click event
+                            const inventionId = btn.closest('.invention-card').dataset.inventionId;
+                            handlePasswordConfirmationModal(inventionId);
                         });
                     });
                 } catch (error) {
