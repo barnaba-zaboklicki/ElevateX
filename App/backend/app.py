@@ -8,6 +8,7 @@ from ssl_config import SSL_ENABLED, SSL_CERT_PATH, SSL_KEY_PATH, SECURITY_HEADER
 from routes.auth_routes import auth_bp
 from routes.invention_routes import invention_bp
 from routes.file_routes import file_bp
+from routes.notification_routes import notification_bp
 from database import db
 
 # Load environment variables
@@ -97,6 +98,7 @@ def health_check():
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(invention_bp, url_prefix='/api/inventions')
 app.register_blueprint(file_bp, url_prefix='/api/files')
+app.register_blueprint(notification_bp, url_prefix='/api/notification')
 
 # Create database tables
 with app.app_context():

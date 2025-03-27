@@ -62,9 +62,9 @@ const roleConfigs = {
                 href: '#'
             },
             {
-                id: 'patents',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"/></svg>',
-                text: 'Patents',
+                id: 'notifications',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-200v-80h80v-280q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28q80 20 130 84.5T720-560v280h80v80H160Zm320-300Zm0 420q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Z"/></svg>',
+                text: 'My Notifications',
                 href: '#'
             }
         ]
@@ -437,27 +437,40 @@ async function handleInventionSubmission(inventionId) {
 // Function to create invention card HTML
 function createInventionCard(invention) {
     const user = JSON.parse(localStorage.getItem('user'));
+    const isInvestor = user.role === 'investor';
     const isInventor = user.role === 'inventor';
-    const isOwner = invention.inventor_id === parseInt(user.id);
+    const isOwner = isInventor && invention.inventor_id === user.id;
+    const isDraft = invention.status === 'draft';
+    const isSubmitted = invention.status === 'submitted';
+    const isAccepted = invention.status === 'accepted';
+    const isRejected = invention.status === 'rejected';
+    const hasPendingRequest = invention.has_pending_request;
 
     return `
         <div class="invention-card" data-invention-id="${invention.id}">
             <h3>${invention.title}</h3>
             <p>${invention.description}</p>
             <div class="invention-meta">
-                <span class="patent-status">Patent: ${invention.patent_status}</span>
-                <span class="funding-status">Funding: ${invention.funding_status}</span>
-                <span class="status">Status: ${invention.status}</span>
+                <span class="status">${invention.status}</span>
                 <span class="date">Created: ${new Date(invention.created_at).toLocaleDateString()}</span>
             </div>
-            <div class="card-actions">
-                ${invention.status === 'draft' ? `
-                    <button class="submit-invention-btn">Submit for Review</button>
-                ` : ''}
-                ${isInventor && isOwner ? `
-                    <button class="delete-invention-btn">Delete Project</button>
-                ` : ''}
-            </div>
+            ${isInvestor ? `
+                <button class="request-access-btn ${hasPendingRequest ? 'disabled' : ''}" 
+                        data-invention-id="${invention.id}"
+                        ${hasPendingRequest ? 'disabled' : ''}>
+                    ${hasPendingRequest ? 'Request Sent' : 'Request Access'}
+                </button>
+            ` : ''}
+            ${isOwner && isDraft ? `
+                <button class="submit-invention-btn" data-invention-id="${invention.id}">
+                    Submit for Review
+                </button>
+            ` : ''}
+            ${isOwner && !isDraft ? `
+                <button class="delete-invention-btn" data-invention-id="${invention.id}">
+                    Delete Invention
+                </button>
+            ` : ''}
         </div>
     `;
 }
@@ -651,6 +664,50 @@ function handleModal(invention) {
     });
 }
 
+// Function to handle request access
+async function handleRequestAccess(inventionId) {
+    try {
+        const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}/request-access`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            rejectUnauthorized: false
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            if (response.status === 403) {
+                alert('Only investors can request access to inventions.');
+                return;
+            }
+            if (response.status === 400) {
+                alert(data.error || 'You have already requested access to this invention.');
+                return;
+            }
+            if (response.status === 404) {
+                alert('Invention not found.');
+                return;
+            }
+            throw new Error(data.error || 'Failed to request access');
+        }
+
+        alert('Access request sent successfully!');
+        // Disable the request button
+        const button = document.querySelector(`.request-access-btn[data-invention-id="${inventionId}"]`);
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Request Sent';
+        }
+    } catch (error) {
+        console.error('Error requesting access:', error);
+        alert(error.message || 'Failed to request access. Please try again.');
+    }
+}
+
 // Function to handle menu item click
 async function handleMenuClick(menuId) {
     const contentDiv = document.getElementById('dashboard-content');
@@ -690,7 +747,6 @@ async function handleMenuClick(menuId) {
                         </div>
                     `;
 
-                    // Fetch and display available projects
                     const response = await fetch('https://127.0.0.1:5000/api/inventions/available', {
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -743,7 +799,17 @@ async function handleMenuClick(menuId) {
                             }
                         });
                     });
+
+                    // Add click event listeners to request access buttons
+                    document.querySelectorAll('.request-access-btn').forEach(btn => {
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation(); // Prevent card click event
+                            const inventionId = btn.dataset.inventionId;
+                            handleRequestAccess(inventionId);
+                        });
+                    });
                 } catch (error) {
+                    console.error('Error:', error);
                     contentDiv.innerHTML = `
                         <div class="welcome-section">
                             <h1>Welcome, ${user.first_name}!</h1>
@@ -942,19 +1008,118 @@ async function handleMenuClick(menuId) {
                     `;
                 }
                 break;
-            case 'patents':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Patents</h2>
-                            <p>Your patents will be displayed here...</p>
+            case 'notifications':
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
                         </div>
-                    </div>
-                `;
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Notifications</h2>
+                                <div class="notifications-list" id="notifications-list">
+                                    <div class="loading">Loading notifications...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        throw new Error('No authentication token found');
+                    }
+
+                    console.log('Fetching notifications with token:', token.substring(0, 20) + '...');
+                    
+                    const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        rejectUnauthorized: false
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Error response:', errorData);
+                        throw new Error(errorData.message || 'Failed to fetch notifications');
+                    }
+
+                    const data = await response.json();
+                    console.log('Received notifications:', data);
+                    const notificationsList = document.getElementById('notifications-list');
+                    
+                    if (data.notifications.length === 0) {
+                        notificationsList.innerHTML = '<div class="no-notifications">No notifications</div>';
+                    } else {
+                        notificationsList.innerHTML = data.notifications.map(notification => `
+                            <div class="notification-item ${notification.is_read ? 'read' : 'unread'}" 
+                                 data-notification-id="${notification.id}"
+                                 data-type="${notification.type}"
+                                 data-reference-id="${notification.reference_id}">
+                                <div class="notification-content">
+                                    <h3>${notification.title}</h3>
+                                    <p>${notification.message}</p>
+                                    <span class="notification-date">${new Date(notification.created_at).toLocaleString()}</span>
+                                </div>
+                                ${notification.type === 'access_request' ? `
+                                    <div class="notification-actions">
+                                        <button class="accept-request-btn">Accept</button>
+                                        <button class="reject-request-btn">Reject</button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `).join('');
+
+                        // Add event listeners for notification actions
+                        document.querySelectorAll('.notification-item').forEach(item => {
+                            const acceptBtn = item.querySelector('.accept-request-btn');
+                            const rejectBtn = item.querySelector('.reject-request-btn');
+                            
+                            if (acceptBtn) {
+                                acceptBtn.addEventListener('click', async (e) => {
+                                    e.stopPropagation();
+                                    await handleAccessRequestResponse(
+                                        item.dataset.referenceId,  // This is the access request ID
+                                        item.dataset.notificationId,  // This is the invention ID
+                                        'accept'
+                                    );
+                                });
+                            }
+                            
+                            if (rejectBtn) {
+                                rejectBtn.addEventListener('click', async (e) => {
+                                    e.stopPropagation();
+                                    await handleAccessRequestResponse(
+                                        item.dataset.referenceId,  // This is the access request ID
+                                        item.dataset.notificationId,  // This is the invention ID
+                                        'reject'
+                                    );
+                                });
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Notifications</h2>
+                                <div class="error-message">
+                                    Failed to load notifications. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
                 break;
         }
     } else if (user.role === 'admin') {
@@ -1019,6 +1184,47 @@ async function handleMenuClick(menuId) {
                 `;
                 break;
         }
+    }
+}
+
+// Function to handle access request response
+async function handleAccessRequestResponse(notificationId, inventionId, action) {
+    try {
+        const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}/handle-access-request`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                request_id: notificationId,  // This is actually the access request ID from reference_id
+                action: action
+            }),
+            credentials: 'include',
+            rejectUnauthorized: false
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Error response:', errorData);
+            throw new Error(errorData.message || 'Failed to handle access request');
+        }
+
+        const data = await response.json();
+        alert(data.message);
+        
+        // Refresh notifications
+        await handleMenuClick('notifications');
+        
+        // If user is an investor and request was accepted, refresh investments
+        const user = JSON.parse(localStorage.getItem('user'));
+        if (user.role === 'investor' && action === 'accept') {
+            await handleMenuClick('myInvestments');
+        }
+    } catch (error) {
+        console.error('Error handling access request:', error);
+        alert('Failed to handle access request. Please try again.');
     }
 }
 

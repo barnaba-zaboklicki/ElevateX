@@ -719,3 +719,14 @@ header {
     padding: 0 5px;
     border-radius: 10px;
 }
+
+.slider.hidden {
+    display: none;
+}
+
+/* Media query for screens below 19 inches (1080px) */
+@media screen and (max-height: 1080px) {
+    .slider.hide-on-small {
+        display: none !important;
+    }
+}

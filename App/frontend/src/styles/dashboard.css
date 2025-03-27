@@ -295,11 +295,17 @@
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.3s ease;
+    transition: all 0.2s ease-in-out;
+    width: 100%;
+    font-weight: 500;
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
 }
 
 .delete-invention-btn:hover {
     background-color: #c82333;
+    transform: translateY(-2px);
 }
 
 /* Password Confirmation Modal Styles */
@@ -363,4 +369,95 @@
 
 #passwordConfirmationModal .confirm-btn:hover {
     background-color: #c82333;
+}
+
+.request-access-btn {
+    background: var(--accent-clr);
+    color: var(--text-clr);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    width: 100%;
+    font-weight: 500;
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.request-access-btn:hover {
+    background: var(--accent-hover-clr);
+    transform: translateY(-2px);
+}
+
+.request-access-btn:disabled {
+    background: var(--line-clr);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.request-access-btn.disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.request-access-btn.disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+/* Notification Action Buttons */
+.notification-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.accept-request-btn,
+.reject-request-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.9em;
+    transition: all 0.2s ease-in-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+}
+
+.accept-request-btn {
+    background: #28a745;
+    color: white;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+}
+
+.accept-request-btn:hover {
+    background: #218838;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.reject-request-btn {
+    background: #dc3545;
+    color: white;
+    box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2);
+}
+
+.reject-request-btn:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
+}
+
+.accept-request-btn:disabled,
+.reject-request-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
 } 

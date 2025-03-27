@@ -7,6 +7,9 @@ from database import db
 from utils.s3_utils import upload_file_to_s3, delete_file_from_s3
 import os
 from models.user import User
+from models.access_request import AccessRequest
+from models.notification import Notification
+from flask import current_app
 
 invention_bp = Blueprint('invention', __name__)
 
@@ -273,21 +276,35 @@ def delete_invention(invention_id):
 def get_available_projects():
     """Get all available projects for investors."""
     try:
+        current_user_id = get_jwt_identity()
         # Get all projects that are not in draft status
         inventions = Invention.query.filter(
             Invention.status != 'draft'
         ).all()
         
         # Convert to dictionary and include only necessary fields for initial view
-        projects = [{
-            'id': invention.id,
-            'title': invention.title,
-            'description': invention.description,
-            'patent_status': invention.patent_status,
-            'funding_status': invention.funding_status,
-            'status': invention.status,
-            'created_at': invention.created_at.isoformat() if invention.created_at else None
-        } for invention in inventions]
+        projects = []
+        for invention in inventions:
+            # Check if current user has a pending request
+            has_pending_request = False
+            if current_user_id:
+                pending_request = AccessRequest.query.filter_by(
+                    invention_id=invention.id,
+                    investor_id=current_user_id,
+                    status='pending'
+                ).first()
+                has_pending_request = pending_request is not None
+            
+            projects.append({
+                'id': invention.id,
+                'title': invention.title,
+                'description': invention.description,
+                'patent_status': invention.patent_status,
+                'funding_status': invention.funding_status,
+                'status': invention.status,
+                'created_at': invention.created_at.isoformat() if invention.created_at else None,
+                'has_pending_request': has_pending_request
+            })
         
         return jsonify({
             'projects': projects
@@ -338,5 +355,161 @@ def update_invention_status(invention_id):
         print(f"Error updating invention status: {str(e)}")  # Debug log
         return jsonify({
             'message': 'Failed to update invention status',
+            'error': str(e)
+        }), 500
+
+@invention_bp.route('/<int:invention_id>/request-access', methods=['POST'])
+@jwt_required()
+def request_access(invention_id):
+    try:
+        current_user_id = get_jwt_identity()
+        print(f"Processing access request for invention {invention_id} by user {current_user_id}")
+        
+        # Get the invention
+        invention = Invention.query.get_or_404(invention_id)
+        print(f"Found invention: {invention.title}")
+        
+        # Check if user is an investor
+        user = User.query.get(current_user_id)
+        print(f"User role: {user.role if user else 'None'}")
+        
+        if not user or user.role != 'investor':
+            print("User is not an investor")
+            return jsonify({'error': 'Only investors can request access'}), 403
+            
+        # Check if request already exists
+        existing_request = AccessRequest.query.filter_by(
+            invention_id=invention_id,
+            investor_id=current_user_id,
+            status='pending'
+        ).first()
+        
+        if existing_request:
+            print("Access request already exists")
+            return jsonify({'error': 'Access request already pending'}), 400
+            
+        # Create new access request
+        new_request = AccessRequest(
+            invention_id=invention_id,
+            investor_id=current_user_id,
+            status='pending',
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(new_request)
+        db.session.commit()
+        print("Created new access request")
+        
+        # Create notification for the inventor
+        notification = Notification(
+            user_id=invention.inventor_id,
+            title='New Access Request',
+            message=f'Investor {user.first_name} {user.last_name} has requested access to your invention "{invention.title}"',
+            type='access_request',
+            reference_id=new_request.id,
+            created_at=datetime.utcnow()
+        )
+        
+        db.session.add(notification)
+        db.session.commit()
+        print("Created notification for inventor")
+        
+        return jsonify({
+            'message': 'Access request sent successfully',
+            'request_id': new_request.id
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error requesting access: {str(e)}")
+        current_app.logger.error(f"Error requesting access: {str(e)}")
+        return jsonify({'error': 'Failed to process access request'}), 500
+
+@invention_bp.route('/<int:invention_id>/handle-access-request', methods=['POST'])
+@jwt_required()
+def handle_access_request(invention_id):
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data or 'request_id' not in data or 'action' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        request_id = data['request_id']
+        action = data['action']
+        
+        if action not in ['accept', 'reject']:
+            return jsonify({'error': 'Invalid action'}), 400
+            
+        # Get the access request
+        access_request = AccessRequest.query.get_or_404(request_id)
+        
+        # Verify the current user is the invention owner
+        invention = Invention.query.get_or_404(invention_id)
+        if invention.inventor_id != current_user_id:
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        # Update request status
+        access_request.status = 'accepted' if action == 'accept' else 'rejected'
+        access_request.updated_at = datetime.utcnow()
+        
+        if action == 'accept':
+            # Create notification for the investor
+            notification = Notification(
+                user_id=access_request.investor_id,
+                title='Access Request Accepted',
+                message=f'Your request to access "{invention.title}" has been accepted',
+                type='access_request_accepted',
+                reference_id=invention_id,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(notification)
+            
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Access request {action}ed successfully',
+            'status': access_request.status
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error handling access request: {str(e)}")
+        return jsonify({'error': 'Failed to process access request'}), 500
+
+@invention_bp.route('/notifications', methods=['GET'])
+@jwt_required()
+def get_notifications():
+    """Get all notifications for the current user."""
+    try:
+        current_user_id = get_jwt_identity()
+        print(f"Fetching notifications for user {current_user_id}")
+        
+        # Get all notifications for the current user
+        notifications = Notification.query.filter_by(
+            user_id=current_user_id
+        ).order_by(Notification.created_at.desc()).all()
+        
+        # Convert to dictionary format
+        notifications_data = [{
+            'id': notification.id,
+            'title': notification.title,
+            'message': notification.message,
+            'type': notification.type,
+            'reference_id': notification.reference_id,
+            'is_read': notification.is_read,
+            'created_at': notification.created_at.isoformat() if notification.created_at else None
+        } for notification in notifications]
+        
+        print(f"Found {len(notifications_data)} notifications")
+        return jsonify({
+            'notifications': notifications_data
+        }), 200
+        
+    except Exception as e:
+        print(f"Error fetching notifications: {str(e)}")
+        current_app.logger.error(f"Error fetching notifications: {str(e)}")
+        return jsonify({
+            'message': 'Failed to fetch notifications',
             'error': str(e)
         }), 500 
