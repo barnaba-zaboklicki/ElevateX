@@ -18,7 +18,7 @@ COMMIT;
 BEGIN;
 
 CREATE TYPE user_role AS ENUM ('admin', 'inventor', 'investor', 'researcher');
-CREATE TYPE invention_status AS ENUM ('draft', 'pending', 'approved', 'rejected');
+CREATE TYPE invention_status AS ENUM ('draft', 'submitted', 'under_review', 'approved', 'rejected');
 CREATE TYPE investment_status AS ENUM ('pending', 'approved', 'rejected');
 
 COMMIT;
@@ -48,14 +48,13 @@ CREATE TABLE inventions (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    status invention_status DEFAULT 'draft',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    inventor_id INTEGER REFERENCES users(id),
-    category VARCHAR(100),
     technical_details TEXT,
-    patent_status VARCHAR(100),
-    funding_status VARCHAR(100)
+    patent_status VARCHAR(20) NOT NULL DEFAULT 'not_filed',
+    funding_status VARCHAR(20) NOT NULL DEFAULT 'not_requested',
+    status invention_status NOT NULL DEFAULT 'draft',
+    inventor_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 COMMIT;

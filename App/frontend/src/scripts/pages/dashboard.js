@@ -21,15 +21,27 @@ const roleConfigs = {
         title: 'Investor Dashboard',
         menuItems: [
             {
-                id: 'projects',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="m234-480-12-60q-12-5-22.5-10.5T178-564l-58 18-40-68 46-40q-2-13-2-26t2-26l-46-40 40-68 58 18q11-8 21.5-13.5T222-820l12-60h80l12 60q12 5 22.5 10.5T370-796l58-18 40 68-46 40q2 13 2 26t-2 26l46 40-40 68-58-18q-11 8-21.5 13.5T326-540l-12 60h-80Z"/></svg>',
-                text: 'My Projects',
+                id: 'availableProjects',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z"/></svg>',
+                text: 'Available Projects',
                 href: '#'
             },
             {
-                id: 'requests',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M120-120v-80l80-80v160h-80Zm160 0v-240l80-80v320h-80Z"/></svg>',
-                text: 'Investment Requests',
+                id: 'myInvestments',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160Z"/></svg>',
+                text: 'My Investments',
+                href: '#'
+            },
+            {
+                id: 'investmentHistory',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>',
+                text: 'Investment History',
+                href: '#'
+            },
+            {
+                id: 'analytics',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-160v-640h160v640H160Zm240 0v-400h160v400H400Zm240 0v-240h160v240H640Z"/></svg>',
+                text: 'Investment Analytics',
                 href: '#'
             }
         ]
@@ -266,7 +278,9 @@ async function handleIdeaSubmission(e) {
                 'Accept': 'application/json'
             },
             credentials: 'include',
-            body: requestData
+            body: requestData,
+            mode: 'cors',
+            rejectUnauthorized: false
         });
 
         if (!response.ok) {
@@ -321,8 +335,194 @@ function checkTokenExpiration() {
     }
 }
 
+// Function to fetch available projects
+async function fetchAvailableProjects() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        console.error('No authentication token found');
+        throw new Error('No authentication token found');
+    }
+
+    try {
+        console.log('Fetching available projects...');
+        const response = await fetch('https://127.0.0.1:5000/api/inventions/available', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            mode: 'cors',
+            rejectUnauthorized: false
+        });
+
+        console.log('Response status:', response.status);
+        console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.error('Authentication failed - redirecting to login');
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                window.location.href = '../landing/index.html';
+                return;
+            }
+            const errorData = await response.json();
+            console.error('Server error:', errorData);
+            throw new Error(errorData.message || 'Failed to fetch projects');
+        }
+
+        const data = await response.json();
+        console.log('Received projects:', data);
+        return data.projects;
+    } catch (error) {
+        console.error('Error fetching projects:', error);
+        throw error;
+    }
+}
+
+// Function to create project card HTML
+function createProjectCard(project) {
+    return `
+        <div class="project-card" data-project-id="${project.id}">
+            <h3>${project.title}</h3>
+            <p>${project.description}</p>
+            <div class="project-meta">
+                <span class="patent-status">Patent: ${project.patent_status}</span>
+                <span class="funding-status">Funding: ${project.funding_status}</span>
+                <span class="date">Posted: ${new Date(project.created_at).toLocaleDateString()}</span>
+            </div>
+            <button class="view-details-btn">View Details</button>
+        </div>
+    `;
+}
+
+// Function to handle invention submission
+async function handleInventionSubmission(inventionId) {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        console.error('No authentication token found');
+        throw new Error('No authentication token found');
+    }
+
+    try {
+        console.log('Submitting invention for review...');
+        const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ status: 'pending' })
+        });
+
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Server error:', errorData);
+            throw new Error(errorData.message || 'Failed to submit invention');
+        }
+
+        const result = await response.json();
+        console.log('Invention submitted successfully:', result);
+        return result;
+    } catch (error) {
+        console.error('Error submitting invention:', error);
+        throw error;
+    }
+}
+
+// Function to create invention card HTML
+function createInventionCard(invention) {
+    return `
+        <div class="invention-card" data-invention-id="${invention.id}">
+            <h3>${invention.title}</h3>
+            <p>${invention.description}</p>
+            <div class="invention-meta">
+                <span class="patent-status">Patent: ${invention.patent_status}</span>
+                <span class="funding-status">Funding: ${invention.funding_status}</span>
+                <span class="status">Status: ${invention.status}</span>
+                <span class="date">Created: ${new Date(invention.created_at).toLocaleDateString()}</span>
+            </div>
+            ${invention.status === 'draft' ? `
+                <button class="submit-invention-btn">Submit for Review</button>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Function to create modal HTML
+function createInventionModal(invention) {
+    return `
+        <div class="modal" id="inventionModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">${invention.title}</h2>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-meta">
+                        <span class="modal-status">Patent Status: ${invention.patent_status}</span>
+                        <span class="modal-status">Funding Status: ${invention.funding_status}</span>
+                        <span class="modal-status">Status: ${invention.status}</span>
+                        <span class="modal-status">Created: ${new Date(invention.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <div class="modal-section">
+                        <h3>Description</h3>
+                        <div class="modal-description">${invention.description}</div>
+                    </div>
+                    <div class="modal-section">
+                        <h3>Technical Details</h3>
+                        <div class="modal-technical">${invention.technical_details}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Function to handle modal
+function handleModal(invention) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('inventionModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    // Add new modal to body
+    document.body.insertAdjacentHTML('beforeend', createInventionModal(invention));
+
+    // Get modal elements
+    const modal = document.getElementById('inventionModal');
+    const closeBtn = modal.querySelector('.modal-close');
+
+    // Show modal
+    modal.style.display = 'block';
+
+    // Close modal when clicking close button
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    });
+}
+
 // Function to handle menu item click
-function handleMenuClick(menuId) {
+async function handleMenuClick(menuId) {
     const contentDiv = document.getElementById('dashboard-content');
     const user = JSON.parse(localStorage.getItem('user'));
     
@@ -341,6 +541,138 @@ function handleMenuClick(menuId) {
     if (menuId === 'home') {
         // Load default dashboard content
         loadDashboardContent(user.role);
+    } else if (user.role === 'investor') {
+        switch (menuId) {
+            case 'availableProjects':
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Available Projects</h2>
+                                <div class="inventions-grid" id="inventions-grid">
+                                    <div class="loading">Loading available projects...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Fetch and display available projects
+                    const response = await fetch('https://127.0.0.1:5000/api/inventions/available', {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Accept': 'application/json'
+                        },
+                        credentials: 'include',
+                        rejectUnauthorized: false
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch available projects');
+                    }
+
+                    const data = await response.json();
+                    const inventionsGrid = document.getElementById('inventions-grid');
+                    inventionsGrid.innerHTML = data.projects.map(createInventionCard).join('');
+
+                    // Add click event listeners to cards
+                    document.querySelectorAll('.invention-card').forEach(card => {
+                        card.addEventListener('click', async (e) => {
+                            const inventionId = card.dataset.inventionId;
+                            try {
+                                const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                        'Accept': 'application/json'
+                                    },
+                                    credentials: 'include',
+                                    rejectUnauthorized: false
+                                });
+
+                                if (response.status === 403) {
+                                    alert('You do not have permission to view this invention.');
+                                    return;
+                                }
+
+                                if (!response.ok) {
+                                    throw new Error('Failed to fetch invention details');
+                                }
+
+                                const invention = await response.json();
+                                handleModal(invention);
+                            } catch (error) {
+                                console.error('Error fetching invention details:', error);
+                                if (error.message === 'Failed to fetch invention details') {
+                                    alert('Failed to load invention details. Please try again.');
+                                } else {
+                                    alert('An error occurred while loading the invention details.');
+                                }
+                            }
+                        });
+                    });
+                } catch (error) {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Available Projects</h2>
+                                <div class="error-message">
+                                    Failed to load available projects. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                break;
+            case 'myInvestments':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>My Investments</h2>
+                            <p>Investments made by you will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'investmentHistory':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Investment History</h2>
+                            <p>Investment history will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'analytics':
+                contentDiv.innerHTML = `
+                    <div class="welcome-section">
+                        <h1>Welcome, ${user.first_name}!</h1>
+                        <h2>${roleConfigs[user.role].title}</h2>
+                    </div>
+                    <div class="dashboard-sections">
+                        <div class="container">
+                            <h2>Investment Analytics</h2>
+                            <p>Investment analytics will be displayed here...</p>
+                        </div>
+                    </div>
+                `;
+                break;
+        }
     } else if (user.role === 'inventor') {
         switch (menuId) {
             case 'addProject':
@@ -364,18 +696,111 @@ function handleMenuClick(menuId) {
                 }
                 break;
             case 'myInventions':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>My Inventions</h2>
-                            <p>Your inventions will be displayed here...</p>
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
                         </div>
-                    </div>
-                `;
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Inventions</h2>
+                                <div class="inventions-grid" id="inventions-grid">
+                                    <div class="loading">Loading inventions...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Fetch and display inventions
+                    const response = await fetch('https://127.0.0.1:5000/api/inventions', {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Accept': 'application/json'
+                        },
+                        credentials: 'include'
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch inventions');
+                    }
+
+                    const data = await response.json();
+                    const inventionsGrid = document.getElementById('inventions-grid');
+                    inventionsGrid.innerHTML = data.inventions.map(createInventionCard).join('');
+
+                    // Add click event listeners to cards
+                    document.querySelectorAll('.invention-card').forEach(card => {
+                        card.addEventListener('click', async (e) => {
+                            // Don't trigger modal if clicking submit button
+                            if (e.target.classList.contains('submit-invention-btn')) {
+                                return;
+                            }
+                            
+                            const inventionId = card.dataset.inventionId;
+                            try {
+                                const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                        'Accept': 'application/json'
+                                    },
+                                    credentials: 'include',
+                                    rejectUnauthorized: false
+                                });
+
+                                if (response.status === 403) {
+                                    alert('You do not have permission to view this invention.');
+                                    return;
+                                }
+
+                                if (!response.ok) {
+                                    throw new Error('Failed to fetch invention details');
+                                }
+
+                                const invention = await response.json();
+                                handleModal(invention);
+                            } catch (error) {
+                                console.error('Error fetching invention details:', error);
+                                if (error.message === 'Failed to fetch invention details') {
+                                    alert('Failed to load invention details. Please try again.');
+                                } else {
+                                    alert('An error occurred while loading the invention details.');
+                                }
+                            }
+                        });
+                    });
+
+                    // Add click event listeners to submit buttons
+                    document.querySelectorAll('.submit-invention-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            e.stopPropagation(); // Prevent card click event
+                            const inventionId = btn.closest('.invention-card').dataset.inventionId;
+                            try {
+                                await handleInventionSubmission(inventionId);
+                                alert('Invention submitted for review successfully!');
+                                // Refresh the inventions list
+                                handleMenuClick('myInventions');
+                            } catch (error) {
+                                alert('Failed to submit invention. Please try again.');
+                            }
+                        });
+                    });
+                } catch (error) {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Inventions</h2>
+                                <div class="error-message">
+                                    Failed to load inventions. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
                 break;
             case 'patents':
                 contentDiv.innerHTML = `
@@ -387,37 +812,6 @@ function handleMenuClick(menuId) {
                         <div class="container">
                             <h2>Patents</h2>
                             <p>Your patents will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
-        }
-    } else if (user.role === 'investor') {
-        switch (menuId) {
-            case 'projects':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>My Projects</h2>
-                            <p>Your investment projects will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'requests':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Investment Requests</h2>
-                            <p>Investment requests will be displayed here...</p>
                         </div>
                     </div>
                 `;

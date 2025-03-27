@@ -24,4 +24,260 @@
     margin-bottom: 1.5rem;
     font-weight: 700;
     text-align: center;
+}
+
+/* Project Grid */
+.projects-grid,
+.inventions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    align-items: start;
+}
+
+/* Project Card */
+.project-card,
+.invention-card {
+    background: var(--base-clr);
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    border: 1px solid var(--line-clr);
+    display: flex;
+    flex-direction: column;
+    min-height: 300px;
+    height: auto;
+    position: relative;
+    cursor: pointer;
+}
+
+.project-card:hover,
+.invention-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border-color: var(--accent-clr);
+}
+
+.project-card h3,
+.invention-card h3 {
+    margin: 0 0 10px 0;
+    color: var(--text-clr);
+    font-size: 1.2em;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.project-card p,
+.invention-card p {
+    color: var(--text-clr);
+    margin: 0 0 15px 0;
+    line-height: 1.5;
+    opacity: 0.8;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.project-card p:hover,
+.invention-card p:hover {
+    height: 300px;
+    overflow-y: auto;
+}
+
+.project-card p::-webkit-scrollbar,
+.invention-card p::-webkit-scrollbar {
+    width: 6px;
+    background: transparent;
+}
+
+.project-card p::-webkit-scrollbar-track,
+.invention-card p::-webkit-scrollbar-track {
+    background: var(--bg-clr);
+    border-radius: 3px;
+}
+
+.project-card p::-webkit-scrollbar-thumb,
+.invention-card p::-webkit-scrollbar-thumb {
+    background: var(--accent-clr);
+    border-radius: 3px;
+}
+
+.project-card p::-webkit-scrollbar-thumb:hover,
+.invention-card p::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-hover-clr);
+}
+
+.project-meta,
+.invention-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    color: var(--text-clr);
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.patent-status,
+.funding-status,
+.status,
+.date {
+    background: var(--bg-clr);
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: var(--text-clr);
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.view-details-btn,
+.submit-invention-btn {
+    background: var(--accent-clr);
+    color: var(--text-clr);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    width: 100%;
+    font-weight: 500;
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.view-details-btn:hover,
+.submit-invention-btn:hover {
+    background: var(--accent-hover-clr);
+    transform: translateY(-2px);
+}
+
+/* Loading State */
+.loading {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-clr);
+    opacity: 0.8;
+}
+
+/* Error Message */
+.error-message {
+    text-align: center;
+    padding: 20px;
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+/* Modal Styles */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.modal-content {
+    background: var(--base-clr);
+    margin: 50px auto;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 800px;
+    position: relative;
+    border: 1px solid var(--line-clr);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-title {
+    color: var(--text-clr);
+    font-size: 1.8em;
+    font-weight: 600;
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-clr);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 5px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.modal-close:hover {
+    opacity: 1;
+}
+
+.modal-body {
+    color: var(--text-clr);
+    line-height: 1.6;
+}
+
+.modal-section {
+    margin-bottom: 20px;
+}
+
+.modal-section h3 {
+    color: var(--accent-clr);
+    margin-bottom: 10px;
+    font-size: 1.2em;
+}
+
+.modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.modal-status {
+    background: var(--bg-clr);
+    padding: 6px 12px;
+    border-radius: 4px;
+    color: var(--text-clr);
+    font-size: 0.9em;
+}
+
+.modal-description,
+.modal-technical {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin-bottom: 20px;
+}
+
+.modal-description {
+    font-size: 1.1em;
+}
+
+.modal-technical {
+    background: var(--bg-clr);
+    padding: 15px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 0.9em;
 } 

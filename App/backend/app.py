@@ -29,7 +29,7 @@ jwt = JWTManager(app)
 
 # Configure CORS
 CORS(app, 
-     origins=["https://127.0.0.1:3000", "https://localhost:3000"],
+     origins=["https://127.0.0.1:3000", "https://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3000"],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
      expose_headers=["Content-Type", "Authorization"],
@@ -42,7 +42,7 @@ CORS(app,
 def add_security_headers(response):
     # Add CORS headers explicitly
     origin = request.headers.get('Origin')
-    if origin in ["https://127.0.0.1:3000", "https://localhost:3000"]:
+    if origin in ["https://127.0.0.1:3000", "https://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3000"]:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
@@ -59,11 +59,13 @@ def add_security_headers(response):
 def handle_options():
     if request.method == 'OPTIONS':
         response = make_response()
-        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Max-Age', '3600')
+        origin = request.headers.get('Origin')
+        if origin in ["https://127.0.0.1:3000", "https://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3000"]:
+            response.headers.add('Access-Control-Allow-Origin', origin)
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept')
+            response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            response.headers.add('Access-Control-Allow-Credentials', 'true')
+            response.headers.add('Access-Control-Max-Age', '3600')
         return response
 
 # Error handling
