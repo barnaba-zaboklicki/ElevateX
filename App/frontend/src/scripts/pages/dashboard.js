@@ -213,8 +213,8 @@ function createIdeaSubmissionForm() {
             <div class="form-group">
                 <label for="attachments">Attachments</label>
                 <input type="file" id="attachments" name="attachments" multiple
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png">
-                <small>Max file size: 10MB each (50MB total)</small>
+                    accept=".pdf">
+                <small>Only PDF files are accepted. Max file size: 10MB each (50MB total)</small>
                 <div id="selectedFiles" class="selected-files"></div>
             </div>
             
