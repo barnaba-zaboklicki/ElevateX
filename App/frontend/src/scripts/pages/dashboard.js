@@ -43,6 +43,12 @@ const roleConfigs = {
                 icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-160v-640h160v640H160Zm240 0v-400h160v400H400Zm240 0v-240h160v240H640Z"/></svg>',
                 text: 'Investment Analytics',
                 href: '#'
+            },
+            {
+                id: 'notifications',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-200v-80h80v-280q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28q80 20 130 84.5T720-560v280h80v80H160Zm320-300Zm0 420q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Z"/></svg>',
+                text: 'My Notifications',
+                href: '#'
             }
         ]
     },
@@ -868,6 +874,104 @@ async function handleMenuClick(menuId) {
                     </div>
                 `;
                 break;
+            case 'notifications':
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Notifications</h2>
+                                <div class="notifications-list" id="notifications-list">
+                                    <div class="loading">Loading notifications...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        throw new Error('No authentication token found');
+                    }
+
+                    console.log('Fetching notifications with token:', token.substring(0, 20) + '...');
+                    
+                    const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        rejectUnauthorized: false
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Error response:', errorData);
+                        throw new Error(errorData.message || 'Failed to fetch notifications');
+                    }
+
+                    const data = await response.json();
+                    console.log('Received notifications:', data);
+                    const notificationsList = document.getElementById('notifications-list');
+                    
+                    if (data.notifications.length === 0) {
+                        notificationsList.innerHTML = '<div class="no-notifications">No notifications</div>';
+                    } else {
+                        notificationsList.innerHTML = data.notifications.map(notification => {
+                            return `
+                                <div class="notification-item ${notification.is_read ? 'read' : 'unread'}" 
+                                     data-notification-id="${notification.id}"
+                                     data-type="${notification.type}"
+                                     data-reference-id="${notification.reference_id}"
+                                     data-invention-id="${notification.invention_id}">
+                                    <div class="notification-content">
+                                        <h3>${notification.title}</h3>
+                                        <p>${notification.message}</p>
+                                        <span class="notification-date">${new Date(notification.created_at).toLocaleString()}</span>
+                                    </div>
+                                    ${notification.type === 'access_request' ? `
+                                        <div class="notification-actions">
+                                            ${notification.status === 'accepted' ? `
+                                                <button class="accept-request-btn" disabled>Accepted</button>
+                                                <button class="reject-request-btn" data-invention-id="${notification.invention_id}">Reject</button>
+                                                <span class="status-text" style="color: #28a745;">Access request has been accepted</span>
+                                            ` : notification.status === 'rejected' ? `
+                                                <button class="accept-request-btn" data-invention-id="${notification.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" disabled>Rejected</button>
+                                                <span class="status-text" style="color: #dc3545;">Access request has been rejected</span>
+                                            ` : `
+                                                <button class="accept-request-btn" data-invention-id="${notification.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" data-invention-id="${notification.invention_id}">Reject</button>
+                                            `}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Notifications</h2>
+                                <div class="error-message">
+                                    Failed to load notifications. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                break;
         }
     } else if (user.role === 'inventor') {
         switch (menuId) {
@@ -1056,52 +1160,37 @@ async function handleMenuClick(menuId) {
                     if (data.notifications.length === 0) {
                         notificationsList.innerHTML = '<div class="no-notifications">No notifications</div>';
                     } else {
-                        notificationsList.innerHTML = data.notifications.map(notification => `
-                            <div class="notification-item ${notification.is_read ? 'read' : 'unread'}" 
-                                 data-notification-id="${notification.id}"
-                                 data-type="${notification.type}"
-                                 data-reference-id="${notification.reference_id}">
-                                <div class="notification-content">
-                                    <h3>${notification.title}</h3>
-                                    <p>${notification.message}</p>
-                                    <span class="notification-date">${new Date(notification.created_at).toLocaleString()}</span>
-                                </div>
-                                ${notification.type === 'access_request' ? `
-                                    <div class="notification-actions">
-                                        <button class="accept-request-btn">Accept</button>
-                                        <button class="reject-request-btn">Reject</button>
+                        notificationsList.innerHTML = data.notifications.map(notification => {
+                            return `
+                                <div class="notification-item ${notification.is_read ? 'read' : 'unread'}" 
+                                     data-notification-id="${notification.id}"
+                                     data-type="${notification.type}"
+                                     data-reference-id="${notification.reference_id}"
+                                     data-invention-id="${notification.invention_id}">
+                                    <div class="notification-content">
+                                        <h3>${notification.title}</h3>
+                                        <p>${notification.message}</p>
+                                        <span class="notification-date">${new Date(notification.created_at).toLocaleString()}</span>
                                     </div>
-                                ` : ''}
-                            </div>
-                        `).join('');
-
-                        // Add event listeners for notification actions
-                        document.querySelectorAll('.notification-item').forEach(item => {
-                            const acceptBtn = item.querySelector('.accept-request-btn');
-                            const rejectBtn = item.querySelector('.reject-request-btn');
-                            
-                            if (acceptBtn) {
-                                acceptBtn.addEventListener('click', async (e) => {
-                                    e.stopPropagation();
-                                    await handleAccessRequestResponse(
-                                        item.dataset.referenceId,  // This is the access request ID
-                                        item.dataset.notificationId,  // This is the invention ID
-                                        'accept'
-                                    );
-                                });
-                            }
-                            
-                            if (rejectBtn) {
-                                rejectBtn.addEventListener('click', async (e) => {
-                                    e.stopPropagation();
-                                    await handleAccessRequestResponse(
-                                        item.dataset.referenceId,  // This is the access request ID
-                                        item.dataset.notificationId,  // This is the invention ID
-                                        'reject'
-                                    );
-                                });
-                            }
-                        });
+                                    ${notification.type === 'access_request' ? `
+                                        <div class="notification-actions">
+                                            ${notification.status === 'accepted' ? `
+                                                <button class="accept-request-btn" disabled>Accepted</button>
+                                                <button class="reject-request-btn" data-invention-id="${notification.invention_id}">Reject</button>
+                                                <span class="status-text" style="color: #28a745;">Access request has been accepted</span>
+                                            ` : notification.status === 'rejected' ? `
+                                                <button class="accept-request-btn" data-invention-id="${notification.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" disabled>Rejected</button>
+                                                <span class="status-text" style="color: #dc3545;">Access request has been rejected</span>
+                                            ` : `
+                                                <button class="accept-request-btn" data-invention-id="${notification.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" data-invention-id="${notification.invention_id}">Reject</button>
+                                            `}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('');
                     }
                 } catch (error) {
                     console.error('Error:', error);
@@ -1187,44 +1276,131 @@ async function handleMenuClick(menuId) {
     }
 }
 
+// Function to fetch notifications
+async function fetchNotifications() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No authentication token found');
+    }
+
+    const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        rejectUnauthorized: false
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch notifications');
+    }
+
+    const data = await response.json();
+    return data.notifications;
+}
+
 // Function to handle access request response
-async function handleAccessRequestResponse(notificationId, inventionId, action) {
+async function handleAccessRequestResponse(notificationId, action) {
     try {
-        const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}/handle-access-request`, {
+        console.log('Starting handleAccessRequestResponse with:', {
+            notificationId,
+            action
+        });
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('No authentication token found');
+            throw new Error('No authentication token found');
+        }
+
+        // Get the notification to find the access request ID
+        console.log('Fetching notifications from:', 'https://127.0.0.1:5000/api/inventions/notifications');
+        const notificationsResponse = await fetch('https://127.0.0.1:5000/api/inventions/notifications', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (!notificationsResponse.ok) {
+            console.error('Failed to fetch notifications:', {
+                status: notificationsResponse.status,
+                statusText: notificationsResponse.statusText
+            });
+            throw new Error('Failed to fetch notifications');
+        }
+        
+        const data = await notificationsResponse.json();
+        console.log('Received notifications data:', data);
+        
+        const notification = data.notifications.find(n => n.id === parseInt(notificationId));
+        console.log('Found notification:', notification);
+        
+        if (!notification || !notification.reference_id) {
+            console.error('Invalid notification data:', {
+                notificationId,
+                notification,
+                reference_id: notification?.reference_id
+            });
+            throw new Error('Invalid notification or missing reference ID');
+        }
+
+        console.log('Handling access request:', {
+            notificationId,
+            accessRequestId: notification.reference_id,
+            action,
+            notificationType: notification.type
+        });
+
+        // Make the request to handle the access request
+        const url = `https://127.0.0.1:5000/api/inventions/access-requests/${notification.reference_id}/handle`;
+        console.log('Making request to:', url);
+        
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
             body: JSON.stringify({
-                request_id: notificationId,  // This is actually the access request ID from reference_id
                 action: action
-            }),
-            credentials: 'include',
-            rejectUnauthorized: false
+            })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('Error response:', errorData);
+            console.error('Error response:', {
+                status: response.status,
+                statusText: response.statusText,
+                error: errorData
+            });
+            
+            if (response.status === 403) {
+                throw new Error('You do not have permission to handle this access request. Only the inventor can accept or reject requests.');
+            }
+            
             throw new Error(errorData.message || 'Failed to handle access request');
         }
 
-        const data = await response.json();
-        alert(data.message);
+        const result = await response.json();
+        console.log('Success response:', result);
+        alert(result.message);
         
         // Refresh notifications
         await handleMenuClick('notifications');
-        
-        // If user is an investor and request was accepted, refresh investments
-        const user = JSON.parse(localStorage.getItem('user'));
-        if (user.role === 'investor' && action === 'accept') {
-            await handleMenuClick('myInvestments');
-        }
     } catch (error) {
-        console.error('Error handling access request:', error);
-        alert('Failed to handle access request. Please try again.');
+        console.error('Error handling access request:', {
+            error: error.message,
+            stack: error.stack,
+            notificationId,
+            action
+        });
+        alert(error.message || 'Failed to handle access request');
     }
 }
 

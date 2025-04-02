@@ -425,17 +425,19 @@ def request_access(invention_id):
         current_app.logger.error(f"Error requesting access: {str(e)}")
         return jsonify({'error': 'Failed to process access request'}), 500
 
-@invention_bp.route('/<int:invention_id>/handle-access-request', methods=['POST'])
+@invention_bp.route('/access-requests/<int:request_id>/handle', methods=['POST'])
 @jwt_required()
-def handle_access_request(invention_id):
+def handle_access_request(request_id):
     try:
-        current_user_id = get_jwt_identity()
-        data = request.get_json()
+        current_user_id = int(get_jwt_identity())  # Convert string ID to integer
+        print(f"Current user ID: {current_user_id}")
         
-        if not data or 'request_id' not in data or 'action' not in data:
+        data = request.get_json()
+        print(f"Request data: {data}")
+        
+        if not data or 'action' not in data:
             return jsonify({'error': 'Missing required fields'}), 400
             
-        request_id = data['request_id']
         action = data['action']
         
         if action not in ['accept', 'reject']:
@@ -443,9 +445,14 @@ def handle_access_request(invention_id):
             
         # Get the access request
         access_request = AccessRequest.query.get_or_404(request_id)
+        print(f"Access request: {access_request.to_dict()}")
+        
+        # Get the invention to verify ownership
+        invention = Invention.query.get_or_404(access_request.invention_id)
+        print(f"Invention: {invention.to_dict()}")
         
         # Verify the current user is the invention owner
-        invention = Invention.query.get_or_404(invention_id)
+        print(f"Checking ownership: current_user_id={current_user_id}, invention.inventor_id={invention.inventor_id}")
         if invention.inventor_id != current_user_id:
             return jsonify({'error': 'Unauthorized'}), 403
             
@@ -460,11 +467,22 @@ def handle_access_request(invention_id):
                 title='Access Request Accepted',
                 message=f'Your request to access "{invention.title}" has been accepted',
                 type='access_request_accepted',
-                reference_id=invention_id,
+                reference_id=invention.id,
                 created_at=datetime.utcnow()
             )
             db.session.add(notification)
-            
+        else:  # action == 'reject'
+            # Create notification for the investor
+            notification = Notification(
+                user_id=access_request.investor_id,
+                title='Access Request Rejected',
+                message=f'Your request to access "{invention.title}" has been rejected',
+                type='access_request_rejected',
+                reference_id=invention.id,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(notification)
+        
         db.session.commit()
         
         return jsonify({
@@ -512,4 +530,34 @@ def get_notifications():
         return jsonify({
             'message': 'Failed to fetch notifications',
             'error': str(e)
-        }), 500 
+        }), 500
+
+@invention_bp.route('/access-requests/<int:request_id>', methods=['GET'])
+@jwt_required()
+def get_access_request(request_id):
+    """Get details of a specific access request."""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        # Get the access request
+        access_request = AccessRequest.query.get_or_404(request_id)
+        
+        # Get the invention
+        invention = Invention.query.get_or_404(access_request.invention_id)
+        
+        # Verify the current user is either the inventor or the investor
+        if invention.inventor_id != current_user_id and access_request.investor_id != current_user_id:
+            return jsonify({'error': 'Unauthorized'}), 403
+            
+        return jsonify({
+            'id': access_request.id,
+            'invention_id': access_request.invention_id,
+            'investor_id': access_request.investor_id,
+            'status': access_request.status,
+            'created_at': access_request.created_at.isoformat() if access_request.created_at else None,
+            'updated_at': access_request.updated_at.isoformat() if access_request.updated_at else None
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error fetching access request: {str(e)}")
+        return jsonify({'error': 'Failed to fetch access request'}), 500 

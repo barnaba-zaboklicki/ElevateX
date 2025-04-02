@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models.notification import Notification
+from models.access_request import AccessRequest
 from database import db
 from flask import current_app
 import traceback
@@ -69,6 +70,14 @@ def get_notifications():
                     'is_read': notification.is_read,
                     'created_at': notification.created_at.isoformat() if notification.created_at else None
                 }
+
+                # If this is an access request notification, get the status
+                if notification.type == 'access_request' and notification.reference_id:
+                    access_request = AccessRequest.query.get(notification.reference_id)
+                    if access_request:
+                        notification_dict['status'] = access_request.status
+                        print(f"Added status {access_request.status} for notification {notification.id}")
+
                 notifications_data.append(notification_dict)
                 print(f"Processed notification {notification.id}")
             except Exception as process_error:

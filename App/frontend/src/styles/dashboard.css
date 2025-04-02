@@ -460,4 +460,125 @@
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+
+.notifications-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+}
+
+.notification-item {
+    background: var(--base-clr);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    border: 1px solid var(--line-clr);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.notification-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.notification-item.unread {
+    border-left: 4px solid var(--accent-clr);
+}
+
+.notification-item.status-accepted {
+    border-left: 4px solid #28a745;
+}
+
+.notification-item.status-rejected {
+    border-left: 4px solid #dc3545;
+}
+
+.notification-content {
+    margin-bottom: 15px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.notification-content h3 {
+    color: var(--text-clr);
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    word-wrap: break-word;
+}
+
+.notification-content h3 .status-accepted {
+    color: #28a745;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+.notification-content h3 .status-rejected {
+    color: #dc3545;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+.notification-content p {
+    color: var(--text-secondary-clr);
+    margin-bottom: 10px;
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+
+.notification-date {
+    color: var(--text-secondary-clr);
+    font-size: 0.9em;
+}
+
+.notification-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.status-text {
+    display: block;
+    margin-top: 10px;
+    font-size: 0.9em;
+    font-weight: 500;
+}
+
+.no-notifications {
+    text-align: center;
+    padding: 40px;
+    background: var(--base-clr);
+    border-radius: 12px;
+    color: var(--text-secondary-clr);
+    font-size: 1.1em;
+}
+
+.notification-content h3.notification-title {
+    color: var(--text-clr);
+    margin-bottom: 10px;
+    font-size: 1.1em;
+    word-wrap: break-word;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.notification-content h3.notification-title .title-text {
+    color: var(--text-clr);
+}
+
+.notification-content h3.notification-title .status-accepted {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.notification-content h3.notification-title .status-rejected {
+    color: #dc3545;
+    font-weight: 600;
 } 
