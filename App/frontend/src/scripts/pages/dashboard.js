@@ -814,6 +814,12 @@ function createInventionModal(invention) {
     console.log('Creating modal for invention:', invention);
     console.log('Documents in invention:', invention.documents);
 
+    const user = JSON.parse(localStorage.getItem('user'));
+    const isInvestor = user.role === 'investor';
+    const isInventor = user.role === 'inventor';
+    const isOwner = isInventor && invention.inventor_id === user.id;
+    const hasAcceptedAccess = invention.has_accepted_access;
+
     return `
         <div class="modal" id="inventionModal">
             <div class="modal-content">
@@ -845,9 +851,13 @@ function createInventionModal(invention) {
                                     return `
                                         <div class="document-item">
                                             <span class="document-name">${doc.filename}</span>
-                                            <button class="view-document-btn" data-file-path="${doc.s3_key}">
-                                                View Document
-                                            </button>
+                                            ${(isOwner || (isInvestor && hasAcceptedAccess)) ? `
+                                                <button class="view-document-btn" data-file-path="${doc.s3_key}">
+                                                    View Document
+                                                </button>
+                                            ` : `
+                                                <span class="access-restricted">Access Restricted</span>
+                                            `}
                                         </div>
                                     `;
                                 }).join('')}

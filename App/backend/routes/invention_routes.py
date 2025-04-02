@@ -151,11 +151,21 @@ def get_invention(invention_id):
         if not current_user:
             return jsonify({'message': 'User not found'}), 404
         
+        # Check access request status for investors
+        has_accepted_access = False
+        if current_user.role == 'investor':
+            access_request = AccessRequest.query.filter_by(
+                invention_id=invention_id,
+                investor_id=current_user_id,
+                status='accepted'
+            ).first()
+            has_accepted_access = access_request is not None
+        
         # Allow access if:
         # 1. User is the inventor
-        # 2. User is an investor and the invention is not in draft status
+        # 2. User is an investor and has accepted access
         if invention.inventor_id != current_user_id:
-            if current_user.role != 'investor' or invention.status == 'draft':
+            if current_user.role != 'investor' or not has_accepted_access:
                 return jsonify({'message': 'Unauthorized'}), 403
         
         # Debug logging
@@ -165,6 +175,7 @@ def get_invention(invention_id):
             print(f"Document: {doc.filename}, S3 key: {doc.s3_key}")
         
         invention_data = invention.to_dict()
+        invention_data['has_accepted_access'] = has_accepted_access
         print(f"Returning invention data: {invention_data}")
         
         return jsonify(invention_data), 200
