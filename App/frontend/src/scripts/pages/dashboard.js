@@ -1,3 +1,146 @@
+// Initialize PDF libraries
+let pdfjsLib = null;
+let PDFLib = null;
+
+// Function to load PDF libraries
+async function loadPDFLibraries() {
+    try {
+        // Load PDF.js
+        const pdfjsScript = document.createElement('script');
+        pdfjsScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        await new Promise((resolve, reject) => {
+            pdfjsScript.onload = resolve;
+            pdfjsScript.onerror = reject;
+            document.head.appendChild(pdfjsScript);
+        });
+
+        // Initialize PDF.js worker
+        pdfjsLib = window.pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Load PDF-Lib
+        const pdfLibScript = document.createElement('script');
+        pdfLibScript.src = 'https://unpkg.com/pdf-lib@1.17.1';
+        await new Promise((resolve, reject) => {
+            pdfLibScript.onload = resolve;
+            pdfLibScript.onerror = reject;
+            document.head.appendChild(pdfLibScript);
+        });
+
+        PDFLib = window.PDFLib;
+        console.log('PDF libraries loaded successfully');
+    } catch (error) {
+        console.error('Failed to load PDF libraries:', error);
+        throw new Error('Failed to load PDF libraries. Please refresh the page.');
+    }
+}
+
+// Function to check if PDF libraries are loaded
+function arePDFLibrariesLoaded() {
+    return pdfjsLib !== null && PDFLib !== null;
+}
+
+// Function to add watermark to PDF
+async function addWatermarkToPDF(file) {
+    console.log('Starting watermark process...');
+    
+    // Ensure libraries are loaded
+    if (!arePDFLibrariesLoaded()) {
+        console.log('Libraries not loaded, loading them now...');
+        await loadPDFLibraries();
+    }
+    
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                console.log('File read successfully, processing PDF...');
+                const typedarray = new Uint8Array(e.target.result);
+                
+                // Load the original PDF
+                const originalPdf = await PDFLib.PDFDocument.load(typedarray);
+                
+                // Get inventor name from localStorage
+                const user = JSON.parse(localStorage.getItem('user'));
+                const inventorName = user ? user.first_name + ' ' + user.last_name : 'Unknown';
+                
+                // Create a canvas for the watermark
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 800;  // Standard width
+                canvas.height = 100; // Height for watermark text
+                
+                // Set watermark text style
+                ctx.font = 'bold 28px Arial'; // Increased font size
+                ctx.fillStyle = 'rgba(128, 128, 128, 0.5)'; // Increased opacity to 0.5
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Add watermark text with inventor name
+                const watermarkText = `ELEVATEX - ${inventorName.toUpperCase()}`;
+                ctx.fillText(watermarkText, canvas.width/2, canvas.height/2);
+                
+                // Convert canvas to image
+                const watermarkImage = canvas.toDataURL('image/png');
+                
+                // Process each page
+                for (let i = 0; i < originalPdf.getPageCount(); i++) {
+                    const page = originalPdf.getPage(i);
+                    const { width, height } = page.getSize();
+                    
+                    // Create watermark image
+                    const watermarkImageBytes = await fetch(watermarkImage).then(res => res.arrayBuffer());
+                    const watermarkImagePng = await originalPdf.embedPng(watermarkImageBytes);
+                    
+                    // Calculate dimensions for diagonal watermarks
+                    const watermarkWidth = width * 0.4; // 40% of page width for each watermark
+                    const watermarkHeight = watermarkWidth * 0.2; // Maintain aspect ratio
+                    
+                    // Calculate spacing for 4x3 grid
+                    const rowSpacing = height / 5; // Divide height into 5 parts for 4 rows
+                    const colSpacing = width / 4; // Divide width into 4 parts for 3 columns
+                    
+                    // Create 4x3 grid of watermarks
+                    for (let row = 0; row < 4; row++) {
+                        for (let col = 0; col < 3; col++) {
+                            // Calculate position for each watermark
+                            const y = rowSpacing * (row + 1);
+                            const x = colSpacing * (col + 1) - (watermarkWidth / 2);
+                            
+                            // Draw the watermark with diagonal rotation
+                            page.drawImage(watermarkImagePng, {
+                                x,
+                                y,
+                                width: watermarkWidth,
+                                height: watermarkHeight,
+                                opacity: 0.5,
+                                rotate: PDFLib.degrees(45) // 45-degree rotation for diagonal placement
+                            });
+                        }
+                    }
+                }
+                
+                // Save the watermarked PDF
+                const watermarkedPdfBytes = await originalPdf.save();
+                const watermarkedFile = new File([watermarkedPdfBytes], file.name, {
+                    type: 'application/pdf'
+                });
+                
+                console.log('Watermark process completed successfully');
+                resolve(watermarkedFile);
+            } catch (error) {
+                console.error('Error during PDF processing:', error);
+                reject(new Error('Failed to process PDF file. Please try again.'));
+            }
+        };
+        reader.onerror = (error) => {
+            console.error('Error reading file:', error);
+            reject(new Error('Failed to read the PDF file.'));
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 // Role-specific menu items and configurations
 const roleConfigs = {
     admin: {
@@ -170,7 +313,14 @@ function handleLogout() {
 }
 
 // Function to create idea submission form
-function createIdeaSubmissionForm() {
+async function createIdeaSubmissionForm() {
+    // Load PDF libraries when form is created
+    try {
+        await loadPDFLibraries();
+    } catch (error) {
+        console.error('Failed to load PDF libraries:', error);
+    }
+
     return `
         <form id="ideaSubmissionForm" class="idea-form">
             <div class="form-group">
@@ -216,6 +366,7 @@ function createIdeaSubmissionForm() {
                     accept=".pdf">
                 <small>Only PDF files are accepted. Max file size: 10MB each (50MB total)</small>
                 <div id="selectedFiles" class="selected-files"></div>
+                <div id="pdfLibraryStatus" class="pdf-library-status"></div>
             </div>
             
             <button type="submit" class="submit-button">
@@ -227,8 +378,9 @@ function createIdeaSubmissionForm() {
 
 // Function to handle idea submission
 async function handleIdeaSubmission(e) {
-        e.preventDefault();
-    
+    e.preventDefault();
+    console.log('Starting idea submission...');
+
     const form = e.target;
     const formData = new FormData(form);
     const token = localStorage.getItem('token');
@@ -264,9 +416,25 @@ async function handleIdeaSubmission(e) {
         
         // Add files if they exist
         const files = formData.getAll('attachments');
-        files.forEach(file => {
-            requestData.append('attachments', file);
-        });
+        console.log('Processing files:', files.length);
+        
+        for (const file of files) {
+            if (file.type === 'application/pdf') {
+                console.log('Processing PDF file:', file.name);
+                try {
+                    // Add watermark to PDF files
+                    const watermarkedFile = await addWatermarkToPDF(file);
+                    requestData.append('attachments', watermarkedFile);
+                    console.log('PDF processed successfully:', file.name);
+                } catch (error) {
+                    console.error('Error processing PDF:', error);
+                    alert('Failed to process PDF file. Please try again or contact support.');
+                    return;
+                }
+            } else {
+                requestData.append('attachments', file);
+            }
+        }
         
         // Debug logging
         console.log('Form data entries:');
@@ -297,7 +465,7 @@ async function handleIdeaSubmission(e) {
                 
                 // Clear user data and redirect to login
                 localStorage.removeItem('token');
-        localStorage.removeItem('user');
+                localStorage.removeItem('user');
                 alert('Your session has expired. Please log in again.');
                 window.location.href = '../landing/index.html';
                 return;
@@ -368,9 +536,9 @@ async function fetchAvailableProjects() {
         if (!response.ok) {
             if (response.status === 401) {
                 console.error('Authentication failed - redirecting to login');
-        localStorage.removeItem('token');
+                localStorage.removeItem('token');
                 localStorage.removeItem('user');
-        window.location.href = '../landing/index.html';
+                window.location.href = '../landing/index.html';
                 return;
             }
             const errorData = await response.json();
@@ -1328,15 +1496,29 @@ async function handleMenuClick(menuId) {
                     <div class="dashboard-sections">
                         <div class="container">
                             <h2>Submit New Invention</h2>
-                            ${createIdeaSubmissionForm()}
+                            <div id="formContainer">Loading form...</div>
                         </div>
                     </div>
                 `;
+                
+                // Load the form asynchronously
+                const formContainer = document.getElementById('formContainer');
+                formContainer.innerHTML = await createIdeaSubmissionForm();
                 
                 // Add event listener for the form
                 const form = document.getElementById('ideaSubmissionForm');
                 if (form) {
                     form.addEventListener('submit', handleIdeaSubmission);
+                    
+                    // Update PDF library status
+                    const statusDiv = document.getElementById('pdfLibraryStatus');
+                    if (statusDiv) {
+                        if (arePDFLibrariesLoaded()) {
+                            statusDiv.innerHTML = '<span class="success">PDF libraries loaded successfully</span>';
+                        } else {
+                            statusDiv.innerHTML = '<span class="error">Failed to load PDF libraries. Please refresh the page.</span>';
+                        }
+                    }
                 }
                 break;
             case 'myInventions':
