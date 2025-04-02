@@ -664,4 +664,24 @@
 
 .view-document-btn:hover {
     background-color: var(--accent-color-hover);
+}
+
+.start-chat-btn {
+    background: var(--accent-clr);
+    color: var(--text-clr);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    width: 100%;
+    font-weight: 500;
+    margin-top: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.start-chat-btn:hover {
+    background: var(--accent-hover-clr);
+    transform: translateY(-2px);
 } 

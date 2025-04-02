@@ -130,7 +130,7 @@ async function addWatermarkToPDF(file) {
                 resolve(watermarkedFile);
             } catch (error) {
                 console.error('Error during PDF processing:', error);
-                reject(new Error('Failed to process PDF file. Please try again.'));
+                reject(new Error('Failed to process PDF file. Please try again or contact support.'));
             }
         };
         reader.onerror = (error) => {
@@ -171,20 +171,14 @@ const roleConfigs = {
             },
             {
                 id: 'myInvestments',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160Z"/></svg>',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-160v-640h160v640H160Zm240 0v-400h160v400H400Zm240 0v-240h160v240H640Z"/></svg>',
                 text: 'My Investments',
                 href: '#'
             },
             {
-                id: 'investmentHistory',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"/></svg>',
-                text: 'Investment History',
-                href: '#'
-            },
-            {
-                id: 'analytics',
-                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M160-160v-640h160v640H160Zm240 0v-400h160v400H400Zm240 0v-240h160v240H640Z"/></svg>',
-                text: 'Investment Analytics',
+                id: 'messages',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M240-400h480v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Z"/></svg>',
+                text: 'Messages',
                 href: '#'
             },
             {
@@ -208,6 +202,12 @@ const roleConfigs = {
                 id: 'myInventions',
                 icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M440-280h80v-160h160v-80H520v-160h-80v160H280v80h160v160Z"/></svg>',
                 text: 'My Inventions',
+                href: '#'
+            },
+            {
+                id: 'messages',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 -960 960 960" width="24"><path d="M240-400h480v-80H240v80Zm0-120h480v-80H240v80Zm0-120h480v-80H240v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Z"/></svg>',
+                text: 'Messages',
                 href: '#'
             },
             {
@@ -609,7 +609,7 @@ async function handleInventionSubmission(inventionId) {
 }
 
 // Function to create invention card HTML
-function createInventionCard(invention) {
+function createInventionCard(invention, section = 'available') {
     const user = JSON.parse(localStorage.getItem('user'));
     const isInvestor = user.role === 'investor';
     const isInventor = user.role === 'inventor';
@@ -619,6 +619,89 @@ function createInventionCard(invention) {
     const isAccepted = invention.status === 'accepted';
     const isRejected = invention.status === 'rejected';
     const hasPendingRequest = invention.has_pending_request;
+    const hasAcceptedAccess = invention.has_accepted_access;
+
+    // Detailed debug logging
+    console.log('Creating card for invention:', {
+        id: invention.id,
+        title: invention.title,
+        user: {
+            id: user.id,
+            role: user.role
+        },
+        invention: {
+            inventor_id: invention.inventor_id,
+            status: invention.status,
+            has_pending_request: invention.has_pending_request,
+            has_accepted_access: invention.has_accepted_access
+        },
+        flags: {
+            isInvestor,
+            isInventor,
+            isOwner,
+            isDraft,
+            isSubmitted,
+            isAccepted,
+            isRejected,
+            hasPendingRequest,
+            hasAcceptedAccess
+        },
+        section
+    });
+
+    let buttonsHtml = '';
+    
+    // For investors
+    if (isInvestor) {
+        if (hasAcceptedAccess) {
+            buttonsHtml = `
+                <button class="view-details-btn" data-invention-id="${invention.id}">
+                    View Details
+                </button>
+                <button class="start-chat-btn" data-invention-id="${invention.id}">
+                    Start Chat
+                </button>
+            `;
+        } else if (!hasPendingRequest) {
+            buttonsHtml = `
+                <button class="request-access-btn" data-invention-id="${invention.id}">
+                    Request Access
+                </button>
+            `;
+        } else {
+            buttonsHtml = `
+                <button class="request-access-btn disabled" data-invention-id="${invention.id}" disabled>
+                    Request Sent
+                </button>
+            `;
+        }
+    }
+    
+    // For inventors
+    if (isOwner) {
+        if (isDraft) {
+            buttonsHtml = `
+                <button class="submit-invention-btn" data-invention-id="${invention.id}">
+                    Submit for Review
+                </button>
+                <button class="delete-invention-btn" data-invention-id="${invention.id}">
+                    Delete Invention
+                </button>
+            `;
+        } else {
+            buttonsHtml = `
+                <button class="view-details-btn" data-invention-id="${invention.id}">
+                    View Details
+                </button>
+                <button class="delete-invention-btn" data-invention-id="${invention.id}">
+                    Delete Invention
+                </button>
+            `;
+        }
+    }
+
+    // Log the final HTML being generated
+    console.log('Generated buttons HTML:', buttonsHtml);
 
     return `
         <div class="invention-card" data-invention-id="${invention.id}">
@@ -628,23 +711,7 @@ function createInventionCard(invention) {
                 <span class="status">${invention.status}</span>
                 <span class="date">Created: ${new Date(invention.created_at).toLocaleDateString()}</span>
             </div>
-            ${isInvestor ? `
-                <button class="request-access-btn ${hasPendingRequest ? 'disabled' : ''}" 
-                        data-invention-id="${invention.id}"
-                        ${hasPendingRequest ? 'disabled' : ''}>
-                    ${hasPendingRequest ? 'Request Sent' : 'Request Access'}
-                </button>
-            ` : ''}
-            ${isOwner && isDraft ? `
-                <button class="submit-invention-btn" data-invention-id="${invention.id}">
-                    Submit for Review
-                </button>
-            ` : ''}
-            ${isOwner && !isDraft ? `
-                <button class="delete-invention-btn" data-invention-id="${invention.id}">
-                    Delete Invention
-                </button>
-            ` : ''}
+            ${buttonsHtml}
         </div>
     `;
 }
@@ -1162,6 +1229,7 @@ async function handleMenuClick(menuId) {
                         </div>
                     `;
 
+                    console.log('Fetching available projects...');  // Debug log
                     const response = await fetch('https://127.0.0.1:5000/api/inventions/available', {
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -1176,14 +1244,23 @@ async function handleMenuClick(menuId) {
                     }
 
                     const data = await response.json();
+                    console.log('Received projects data:', data);  // Debug log
+                    
                     const inventionsGrid = document.getElementById('inventions-grid');
-                    inventionsGrid.innerHTML = data.projects.map(createInventionCard).join('');
+                    console.log('Creating cards for projects:', data.projects);  // Debug log
+                    
+                    // Create cards for each project
+                    inventionsGrid.innerHTML = data.projects.map(project => {
+                        console.log('Processing project:', project);  // Debug log
+                        return createInventionCard(project, 'available');
+                    }).join('');
 
                     // Add click event listeners to cards
                     document.querySelectorAll('.invention-card').forEach(card => {
                         card.addEventListener('click', async (e) => {
                             const inventionId = card.dataset.inventionId;
                             try {
+                                console.log('Fetching details for invention:', inventionId);  // Debug log
                                 const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
                                     headers: {
                                         'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -1203,6 +1280,7 @@ async function handleMenuClick(menuId) {
                                 }
 
                                 const invention = await response.json();
+                                console.log('Received invention details:', invention);  // Debug log
                                 handleModal(invention);
                             } catch (error) {
                                 console.error('Error fetching invention details:', error);
@@ -1221,6 +1299,16 @@ async function handleMenuClick(menuId) {
                             e.stopPropagation(); // Prevent card click event
                             const inventionId = btn.dataset.inventionId;
                             handleRequestAccess(inventionId);
+                        });
+                    });
+
+                    // Add click event listeners to start chat buttons
+                    document.querySelectorAll('.start-chat-btn').forEach(btn => {
+                        console.log('Found chat button:', btn.dataset.inventionId);  // Debug log
+                        btn.addEventListener('click', (e) => {
+                            e.stopPropagation(); // Prevent card click event
+                            const inventionId = btn.dataset.inventionId;
+                            handleStartChat(inventionId);
                         });
                     });
                 } catch (error) {
@@ -1282,23 +1370,15 @@ async function handleMenuClick(menuId) {
                             </div>
                         `;
                     } else {
-                        investmentsGrid.innerHTML = data.investments.map(investment => `
-                            <div class="invention-card" data-invention-id="${investment.id}">
-                                <h3>${investment.title}</h3>
-                                <p>${investment.description}</p>
-                                <div class="invention-meta">
-                                    <span class="status">Access Granted: ${new Date(investment.access_granted_at).toLocaleDateString()}</span>
-                                    <span class="date">Created: ${new Date(investment.created_at).toLocaleDateString()}</span>
-                                </div>
-                                <button class="view-details-btn">View Details</button>
-                            </div>
-                        `).join('');
+                        investmentsGrid.innerHTML = data.investments.map(investment => {
+                            return createInventionCard(investment, 'investments');
+                        }).join('');
 
                         // Add click event listeners to view details buttons
                         document.querySelectorAll('.view-details-btn').forEach(btn => {
                             btn.addEventListener('click', async (e) => {
                                 e.stopPropagation(); // Prevent card click event
-                                const inventionId = btn.closest('.invention-card').dataset.inventionId;
+                                const inventionId = btn.dataset.inventionId;
                                 try {
                                     const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
                                         headers: {
@@ -1319,6 +1399,15 @@ async function handleMenuClick(menuId) {
                                     console.error('Error fetching invention details:', error);
                                     alert('Failed to load invention details. Please try again.');
                                 }
+                            });
+                        });
+
+                        // Add click event listeners to start chat buttons
+                        document.querySelectorAll('.start-chat-btn').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent card click event
+                                const inventionId = btn.dataset.inventionId;
+                                handleStartChat(inventionId);
                             });
                         });
                     }
@@ -1538,13 +1627,14 @@ async function handleMenuClick(menuId) {
                         </div>
                     `;
 
-                    // Fetch and display inventions
-                    const response = await fetch('https://127.0.0.1:5000/api/inventions', {
+                    // Use the correct endpoint for inventors
+                    const response = await fetch('https://127.0.0.1:5000/api/inventions/', {
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`,
                             'Accept': 'application/json'
                         },
-                        credentials: 'include'
+                        credentials: 'include',
+                        rejectUnauthorized: false
                     });
 
                     if (!response.ok) {
@@ -1553,75 +1643,74 @@ async function handleMenuClick(menuId) {
 
                     const data = await response.json();
                     const inventionsGrid = document.getElementById('inventions-grid');
-                    inventionsGrid.innerHTML = data.inventions.map(createInventionCard).join('');
+                    
+                    if (data.inventions.length === 0) {
+                        inventionsGrid.innerHTML = `
+                            <div class="no-inventions">
+                                <p>You haven't created any inventions yet.</p>
+                                <p>Click the "Create New Invention" button to get started.</p>
+                            </div>
+                        `;
+                    } else {
+                        inventionsGrid.innerHTML = data.inventions.map(invention => {
+                            return createInventionCard(invention, 'myInventions');
+                        }).join('');
 
-                    // Add click event listeners to cards
-                    document.querySelectorAll('.invention-card').forEach(card => {
-                        card.addEventListener('click', async (e) => {
-                            // Don't trigger modal if clicking action buttons
-                            if (e.target.classList.contains('submit-invention-btn') || 
-                                e.target.classList.contains('delete-invention-btn')) {
-                                return;
-                            }
-                            
-                            const inventionId = card.dataset.inventionId;
-                            try {
-                                const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
-                                    headers: {
-                                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                                        'Accept': 'application/json'
-                                    },
-                                    credentials: 'include',
-                                    rejectUnauthorized: false
-                                });
+                        // Add click event listeners to view details buttons
+                        document.querySelectorAll('.view-details-btn').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation(); // Prevent card click event
+                                const inventionId = btn.dataset.inventionId;
+                                try {
+                                    const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+                                        headers: {
+                                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                            'Accept': 'application/json'
+                                        },
+                                        credentials: 'include',
+                                        rejectUnauthorized: false
+                                    });
 
-                                if (response.status === 403) {
-                                    alert('You do not have permission to view this invention.');
-                                    return;
-                                }
+                                    if (!response.ok) {
+                                        throw new Error('Failed to fetch invention details');
+                                    }
 
-                                if (!response.ok) {
-                                    throw new Error('Failed to fetch invention details');
-                                }
-
-                                const invention = await response.json();
-                                handleModal(invention);
-                            } catch (error) {
-                                console.error('Error fetching invention details:', error);
-                                if (error.message === 'Failed to fetch invention details') {
+                                    const invention = await response.json();
+                                    handleModal(invention);
+                                } catch (error) {
+                                    console.error('Error fetching invention details:', error);
                                     alert('Failed to load invention details. Please try again.');
-                                } else {
-                                    alert('An error occurred while loading the invention details.');
                                 }
-                            }
+                            });
                         });
-                    });
 
-                    // Add click event listeners to submit buttons
-                    document.querySelectorAll('.submit-invention-btn').forEach(btn => {
-                        btn.addEventListener('click', async (e) => {
-                            e.stopPropagation(); // Prevent card click event
-                            const inventionId = btn.closest('.invention-card').dataset.inventionId;
-                            try {
-                                await handleInventionSubmission(inventionId);
-                                alert('Invention submitted for review successfully!');
-                                // Refresh the inventions list
-                                handleMenuClick('myInventions');
-                            } catch (error) {
-                                alert('Failed to submit invention. Please try again.');
-                            }
+                        // Add click event listeners to submit buttons
+                        document.querySelectorAll('.submit-invention-btn').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation(); // Prevent card click event
+                                const inventionId = btn.dataset.inventionId;
+                                try {
+                                    await handleInventionSubmission(inventionId);
+                                    alert('Invention submitted for review successfully!');
+                                    // Refresh the inventions list
+                                    handleMenuClick('myInventions');
+                                } catch (error) {
+                                    alert('Failed to submit invention. Please try again.');
+                                }
+                            });
                         });
-                    });
 
-                    // Add click event listeners to delete buttons
-                    document.querySelectorAll('.delete-invention-btn').forEach(btn => {
-                        btn.addEventListener('click', (e) => {
-                            e.stopPropagation(); // Prevent card click event
-                            const inventionId = btn.closest('.invention-card').dataset.inventionId;
-                            handlePasswordConfirmationModal(inventionId);
+                        // Add click event listeners to delete buttons
+                        document.querySelectorAll('.delete-invention-btn').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent card click event
+                                const inventionId = btn.dataset.inventionId;
+                                handlePasswordConfirmationModal(inventionId);
+                            });
                         });
-                    });
+                    }
                 } catch (error) {
+                    console.error('Error:', error);
                     contentDiv.innerHTML = `
                         <div class="welcome-section">
                             <h1>Welcome, ${user.first_name}!</h1>
@@ -1632,6 +1721,122 @@ async function handleMenuClick(menuId) {
                                 <h2>My Inventions</h2>
                                 <div class="error-message">
                                     Failed to load inventions. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                break;
+            case 'messages':
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Messages</h2>
+                                <div class="messages-list" id="messages-list">
+                                    <div class="loading">Loading messages...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        throw new Error('No authentication token found');
+                    }
+
+                    console.log('Fetching messages with token:', token.substring(0, 20) + '...');
+                    
+                    const response = await fetch('https://127.0.0.1:5000/api/message/messages', {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        rejectUnauthorized: false
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        console.error('Error response:', errorData);
+                        throw new Error(errorData.message || 'Failed to fetch messages');
+                    }
+
+                    const data = await response.json();
+                    console.log('Received messages:', data);
+                    const messagesList = document.getElementById('messages-list');
+                    
+                    if (data.messages.length === 0) {
+                        messagesList.innerHTML = '<div class="no-messages">No messages</div>';
+                    } else {
+                        messagesList.innerHTML = data.messages.map(message => {
+                            return `
+                                <div class="message-item ${message.is_read ? 'read' : 'unread'}" 
+                                     data-message-id="${message.id}"
+                                     data-type="${message.type}"
+                                     data-reference-id="${message.reference_id}"
+                                     data-invention-id="${message.invention_id}">
+                                    <div class="message-content">
+                                        <h3>${message.title}</h3>
+                                        <p>${message.message}</p>
+                                        <span class="message-date">${new Date(message.created_at).toLocaleString()}</span>
+                                    </div>
+                                    ${message.type === 'access_request' ? `
+                                        <div class="message-actions">
+                                            ${message.status === 'accepted' ? `
+                                                <button class="accept-request-btn" disabled>Accepted</button>
+                                                <button class="reject-request-btn" data-invention-id="${message.invention_id}">Reject</button>
+                                                <span class="status-text" style="color: #28a745;">Access request has been accepted</span>
+                                            ` : message.status === 'rejected' ? `
+                                                <button class="accept-request-btn" data-invention-id="${message.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" disabled>Rejected</button>
+                                                <span class="status-text" style="color: #dc3545;">Access request has been rejected</span>
+                                            ` : `
+                                                <button class="accept-request-btn" data-invention-id="${message.invention_id}">Accept</button>
+                                                <button class="reject-request-btn" data-invention-id="${message.invention_id}">Reject</button>
+                                            `}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            `;
+                        }).join('');
+
+                        // Add event listeners for accept buttons
+                        document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent message item click
+                                const messageId = btn.closest('.message-item').dataset.messageId;
+                                handleAccessRequestResponse(messageId, 'accept');
+                            });
+                        });
+
+                        // Add event listeners for reject buttons
+                        document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent message item click
+                                const messageId = btn.closest('.message-item').dataset.messageId;
+                                handleAccessRequestResponse(messageId, 'reject');
+                            });
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Messages</h2>
+                                <div class="error-message">
+                                    Failed to load messages. Please try again later.
                                 </div>
                             </div>
                         </div>
@@ -1987,3 +2192,32 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutBtn.addEventListener('click', handleLogout);
     }
 }); 
+
+// Function to handle starting a chat
+async function handleStartChat(inventionId) {
+    try {
+        const response = await fetch(`https://127.0.0.1:5000/api/chats/start`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ invention_id: inventionId })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to start chat');
+        }
+
+        const data = await response.json();
+        // Switch to the chat view
+        handleMenuClick('messages');
+        // TODO: Open the specific chat conversation
+    } catch (error) {
+        console.error('Error starting chat:', error);
+        alert(error.message || 'Failed to start chat. Please try again.');
+    }
+}

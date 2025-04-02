@@ -153,13 +153,24 @@ def get_invention(invention_id):
         
         # Check access request status for investors
         has_accepted_access = False
+        has_pending_request = False
+        
         if current_user.role == 'investor':
+            # Check for accepted access
             access_request = AccessRequest.query.filter_by(
                 invention_id=invention_id,
                 investor_id=current_user_id,
                 status='accepted'
             ).first()
             has_accepted_access = access_request is not None
+            
+            # Check for pending request
+            pending_request = AccessRequest.query.filter_by(
+                invention_id=invention_id,
+                investor_id=current_user_id,
+                status='pending'
+            ).first()
+            has_pending_request = pending_request is not None
         
         # Allow access if:
         # 1. User is the inventor
@@ -176,6 +187,7 @@ def get_invention(invention_id):
         
         invention_data = invention.to_dict()
         invention_data['has_accepted_access'] = has_accepted_access
+        invention_data['has_pending_request'] = has_pending_request
         print(f"Returning invention data: {invention_data}")
         
         return jsonify(invention_data), 200
@@ -313,39 +325,66 @@ def get_available_projects():
     """Get all available projects for investors."""
     try:
         current_user_id = get_jwt_identity()
+        print(f"Current user ID: {current_user_id}")  # Debug log
+        
         # Get all projects that are not in draft status
         inventions = Invention.query.filter(
             Invention.status != 'draft'
         ).all()
         
+        print(f"Found {len(inventions)} inventions")  # Debug log
+        
         # Convert to dictionary and include only necessary fields for initial view
         projects = []
         for invention in inventions:
-            # Check if current user has a pending request
+            # Check if current user has a pending request or accepted access
             has_pending_request = False
+            has_accepted_access = False
             if current_user_id:
+                # Check for pending request
                 pending_request = AccessRequest.query.filter_by(
                     invention_id=invention.id,
                     investor_id=current_user_id,
                     status='pending'
                 ).first()
                 has_pending_request = pending_request is not None
+                
+                # Check for accepted access
+                accepted_request = AccessRequest.query.filter_by(
+                    invention_id=invention.id,
+                    investor_id=current_user_id,
+                    status='accepted'
+                ).first()
+                has_accepted_access = accepted_request is not None
+                
+                print(f"Invention {invention.id}: has_pending_request={has_pending_request}, has_accepted_access={has_accepted_access}")  # Debug log
             
-            projects.append({
+            # Skip inventions that the investor already has access to
+            if has_accepted_access:
+                continue
+            
+            project_data = {
                 'id': invention.id,
                 'title': invention.title,
                 'description': invention.description,
                 'patent_status': invention.patent_status,
                 'funding_status': invention.funding_status,
                 'status': invention.status,
+                'inventor_id': invention.inventor_id,
                 'created_at': invention.created_at.isoformat() if invention.created_at else None,
-                'has_pending_request': has_pending_request
-            })
+                'has_pending_request': has_pending_request,
+                'has_accepted_access': has_accepted_access
+            }
+            print(f"Project data: {project_data}")  # Debug log
+            projects.append(project_data)
         
-        return jsonify({
+        response_data = {
             'projects': projects
-        }), 200
+        }
+        print(f"Final response: {response_data}")  # Debug log
+        return jsonify(response_data), 200
     except Exception as e:
+        print(f"Error in get_available_projects: {str(e)}")  # Debug log
         return jsonify({
             'message': 'Failed to fetch available projects',
             'error': str(e)
@@ -625,7 +664,9 @@ def get_my_investments():
                     'funding_status': invention.funding_status,
                     'status': invention.status,
                     'created_at': invention.created_at.isoformat() if invention.created_at else None,
-                    'access_granted_at': request.updated_at.isoformat() if request.updated_at else None
+                    'access_granted_at': request.updated_at.isoformat() if request.updated_at else None,
+                    'has_accepted_access': True,  # Since these are all accepted investments
+                    'has_pending_request': False  # No pending requests for accepted investments
                 })
         
         return jsonify({
