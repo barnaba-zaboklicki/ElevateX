@@ -606,8 +606,6 @@ function handlePasswordConfirmationModal(inventionId) {
 async function handleViewDocument(s3Key) {
     try {
         console.log('Received S3 key:', s3Key);
-        console.log('S3 key type:', typeof s3Key);
-        console.log('S3 key length:', s3Key.length);
         
         if (!s3Key) {
             throw new Error('No document path provided');
@@ -615,16 +613,7 @@ async function handleViewDocument(s3Key) {
         
         // Extract the S3 key from the full URL or use the key directly
         let actualS3Key = s3Key;
-        if (s3Key.includes('amazonaws.com')) {
-            // Extract the key after the bucket name
-            const bucketName = 'elevatex-inventions';
-            const urlParts = s3Key.split(bucketName + '/');
-            if (urlParts.length > 1) {
-                // Get everything after the bucket name and before any query parameters
-                actualS3Key = urlParts[1].split('?')[0];
-            }
-        } else if (s3Key.startsWith('s3://')) {
-            // Remove the s3:// prefix and bucket name
+        if (s3Key.startsWith('s3://')) {
             actualS3Key = s3Key.replace('s3://elevatex-inventions/', '');
         }
         
@@ -632,49 +621,20 @@ async function handleViewDocument(s3Key) {
             throw new Error('Could not extract valid S3 key from URL');
         }
         
-        console.log('Using S3 key:', actualS3Key);
-        console.log('Using S3 key type:', typeof actualS3Key);
-        console.log('Using S3 key length:', actualS3Key.length);
-        
         // Create a new window/tab to display the document
         const documentWindow = window.open('', '_blank');
         
         // Set the document URL to our direct streaming endpoint
-        // Single encode the S3 key to handle special characters properly
         const encodedKey = encodeURIComponent(actualS3Key);
         const documentUrl = `https://127.0.0.1:5000/api/files/files/${encodedKey}`;
-        console.log('Document URL:', documentUrl);
         
-        // Add authentication header to the request
-        const headers = {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Accept': 'application/json'
-        };
-        
-        // Fetch the document with authentication
-        const response = await fetch(documentUrl, {
-            headers: headers,
-            credentials: 'include',
-            rejectUnauthorized: false
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Error response:', errorText);
-            throw new Error(`Failed to fetch document: ${response.statusText}`);
-        }
-        
-        // Get the blob from the response
-        const blob = await response.blob();
-        
-        // Create a URL for the blob
-        const blobUrl = URL.createObjectURL(blob);
-        
-        // Write the document to the new window with error handling
+        // Write the document to the new window with pdf.js viewer
         documentWindow.document.write(`
             <html>
                 <head>
                     <title>Document Viewer</title>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
                     <style>
                         body { 
                             margin: 0; 
@@ -688,12 +648,13 @@ async function handleViewDocument(s3Key) {
                             display: flex;
                             flex-direction: column;
                         }
-                        .pdf-viewer {
+                        #pdf-viewer {
                             flex: 1;
                             width: 100%;
                             border: none;
                             background: white;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                            overflow-y: auto;
                         }
                         .error-message {
                             color: #dc3545;
@@ -709,44 +670,124 @@ async function handleViewDocument(s3Key) {
                             padding: 20px;
                             color: #666;
                         }
+                        /* Disable right-click */
+                        body {
+                            -webkit-user-select: none;
+                            -moz-user-select: none;
+                            -ms-user-select: none;
+                            user-select: none;
+                        }
+                        /* Disable text selection */
+                        * {
+                            -webkit-touch-callout: none;
+                            -webkit-user-select: none;
+                            -khtml-user-select: none;
+                            -moz-user-select: none;
+                            -ms-user-select: none;
+                            user-select: none;
+                        }
+                        .page {
+                            margin: 10px auto;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }
+                        .page canvas {
+                            display: block;
+                            margin: 0 auto;
+                        }
                     </style>
                 </head>
                 <body>
                     <div class="pdf-container">
                         <div id="loading" class="loading">Loading document...</div>
                         <div id="error" class="error-message" style="display: none;"></div>
-                        <iframe id="pdf-viewer" class="pdf-viewer" style="display: none;"></iframe>
+                        <div id="pdf-viewer"></div>
                     </div>
                     <script>
-                        const iframe = document.getElementById('pdf-viewer');
+                        // Disable right-click
+                        document.addEventListener('contextmenu', function(e) {
+                            e.preventDefault();
+                            return false;
+                        });
+
+                        // Disable keyboard shortcuts
+                        document.addEventListener('keydown', function(e) {
+                            // Disable Ctrl+S, Ctrl+P, Ctrl+Shift+I, F12
+                            if (
+                                (e.ctrlKey && e.key === 's') ||
+                                (e.ctrlKey && e.key === 'p') ||
+                                (e.ctrlKey && e.shiftKey && e.key === 'i') ||
+                                e.key === 'F12'
+                            ) {
+                                e.preventDefault();
+                                return false;
+                            }
+                        });
+
+                        const pdfViewer = document.getElementById('pdf-viewer');
                         const loading = document.getElementById('loading');
                         const error = document.getElementById('error');
-                        
-                        iframe.onload = function() {
+
+                        // Fetch the PDF with authentication
+                        fetch("${documentUrl}", {
+                            headers: {
+                                'Authorization': 'Bearer ${localStorage.getItem('token')}',
+                                'Accept': 'application/json'
+                            },
+                            credentials: 'include'
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Failed to fetch PDF');
+                            }
+                            return response.arrayBuffer();
+                        })
+                        .then(data => {
+                            return pdfjsLib.getDocument({data: data}).promise;
+                        })
+                        .then(pdf => {
                             loading.style.display = 'none';
-                            iframe.style.display = 'block';
-                        };
-                        
-                        iframe.onerror = function() {
+                            pdfViewer.style.display = 'block';
+                            
+                            // Render all pages
+                            const renderPromises = [];
+                            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                                renderPromises.push(
+                                    pdf.getPage(pageNum).then(page => {
+                                        const viewport = page.getViewport({scale: 1.2}); // Increased scale to 1.2
+                                        const canvas = document.createElement('canvas');
+                                        const context = canvas.getContext('2d');
+                                        canvas.height = viewport.height;
+                                        canvas.width = viewport.width;
+                                        
+                                        const renderContext = {
+                                            canvasContext: context,
+                                            viewport: viewport
+                                        };
+                                        
+                                        const pageDiv = document.createElement('div');
+                                        pageDiv.className = 'page';
+                                        pageDiv.appendChild(canvas);
+                                        pdfViewer.appendChild(pageDiv);
+                                        
+                                        return page.render(renderContext).promise;
+                                    })
+                                );
+                            }
+                            return Promise.all(renderPromises);
+                        })
+                        .catch(err => {
+                            console.error('Error loading PDF:', err);
                             loading.style.display = 'none';
                             error.style.display = 'block';
                             error.textContent = 'Failed to load PDF document. Please try again.';
-                        };
-                        
-                        iframe.src = "${blobUrl}";
+                        });
                     </script>
                 </body>
             </html>
         `);
         
-        // Clean up the blob URL when the window is closed
-        documentWindow.onunload = () => {
-            URL.revokeObjectURL(blobUrl);
-        };
-        
     } catch (error) {
         console.error('Error viewing document:', error);
-        console.error('Error stack:', error.stack);
         alert('Failed to view document. Please try again.');
     }
 }
