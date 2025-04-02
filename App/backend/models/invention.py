@@ -16,6 +16,9 @@ class Invention(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
+    # Relationship with documents
+    documents = db.relationship('Document', backref='invention', lazy=True)
+    
     def to_dict(self):
         return {
             'id': self.id,
@@ -27,5 +30,6 @@ class Invention(db.Model):
             'status': self.status,
             'inventor_id': self.inventor_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'documents': [doc.to_dict() for doc in self.documents]
         } 

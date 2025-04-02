@@ -28,4 +28,4 @@ ALLOWED_EXTENSIONS = {
 }
 
 # URL Configuration
-URL_EXPIRATION = 3600  # 1 hour in seconds 
+URL_EXPIRATION = 86400  # 24 hours in seconds 

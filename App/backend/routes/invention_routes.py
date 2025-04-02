@@ -158,8 +158,18 @@ def get_invention(invention_id):
             if current_user.role != 'investor' or invention.status == 'draft':
                 return jsonify({'message': 'Unauthorized'}), 403
         
-        return jsonify(invention.to_dict()), 200
+        # Debug logging
+        print(f"Found invention: {invention.title}")
+        print(f"Number of documents: {len(invention.documents)}")
+        for doc in invention.documents:
+            print(f"Document: {doc.filename}, S3 key: {doc.s3_key}")
+        
+        invention_data = invention.to_dict()
+        print(f"Returning invention data: {invention_data}")
+        
+        return jsonify(invention_data), 200
     except Exception as e:
+        print(f"Error fetching invention: {str(e)}")
         return jsonify({
             'message': 'Failed to fetch invention',
             'error': str(e)
@@ -560,4 +570,42 @@ def get_access_request(request_id):
         
     except Exception as e:
         current_app.logger.error(f"Error fetching access request: {str(e)}")
-        return jsonify({'error': 'Failed to fetch access request'}), 500 
+        return jsonify({'error': 'Failed to fetch access request'}), 500
+
+@invention_bp.route('/my-investments', methods=['GET'])
+@jwt_required()
+def get_my_investments():
+    """Get all accepted projects for the current investor."""
+    try:
+        current_user_id = get_jwt_identity()
+        
+        # Get all accepted access requests for the current investor
+        access_requests = AccessRequest.query.filter_by(
+            investor_id=current_user_id,
+            status='accepted'
+        ).all()
+        
+        # Get the inventions for these access requests
+        investments = []
+        for request in access_requests:
+            invention = Invention.query.get(request.invention_id)
+            if invention:
+                investments.append({
+                    'id': invention.id,
+                    'title': invention.title,
+                    'description': invention.description,
+                    'technical_details': invention.technical_details,
+                    'patent_status': invention.patent_status,
+                    'funding_status': invention.funding_status,
+                    'status': invention.status,
+                    'created_at': invention.created_at.isoformat() if invention.created_at else None,
+                    'access_granted_at': request.updated_at.isoformat() if request.updated_at else None
+                })
+        
+        return jsonify({
+            'investments': investments
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error fetching investments: {str(e)}")
+        return jsonify({'error': 'Failed to fetch investments'}), 500 

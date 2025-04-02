@@ -581,4 +581,87 @@
 .notification-content h3.notification-title .status-rejected {
     color: #dc3545;
     font-weight: 600;
+}
+
+/* No Investments Message */
+.no-investments {
+    text-align: center;
+    padding: 2rem;
+    background: var(--base-clr);
+    border-radius: 12px;
+    border: 1px solid var(--line-clr);
+}
+
+.no-investments p {
+    margin: 0.5rem 0;
+    color: var(--text-clr);
+    font-size: 1.1rem;
+}
+
+.no-investments p:first-child {
+    font-weight: 600;
+    font-size: 1.2rem;
+}
+
+/* View Details Button */
+.view-details-btn {
+    background-color: var(--accent-clr);
+    color: #000;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s ease-in-out;
+    margin-top: auto;
+    width: 100%;
+}
+
+.view-details-btn:hover {
+    background-color: #ffd700;
+}
+
+/* Status in invention-meta */
+.invention-meta .status {
+    color: #28a745;
+    font-weight: 600;
+}
+
+/* Document styles */
+.documents-list {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.document-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background-color: var(--bg-secondary);
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.document-name {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.view-document-btn {
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s ease;
+}
+
+.view-document-btn:hover {
+    background-color: var(--accent-color-hover);
 } 

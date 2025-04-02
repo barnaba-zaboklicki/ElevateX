@@ -602,8 +602,218 @@ function handlePasswordConfirmationModal(inventionId) {
     });
 }
 
+// Function to handle document viewing
+async function handleViewDocument(s3Key) {
+    try {
+        console.log('Received S3 key:', s3Key);
+        console.log('S3 key type:', typeof s3Key);
+        console.log('S3 key length:', s3Key.length);
+        
+        if (!s3Key) {
+            throw new Error('No document path provided');
+        }
+        
+        // Extract the S3 key from the full URL or use the key directly
+        let actualS3Key = s3Key;
+        if (s3Key.includes('amazonaws.com')) {
+            // Extract the key after the bucket name
+            const bucketName = 'elevatex-inventions';
+            const urlParts = s3Key.split(bucketName + '/');
+            if (urlParts.length > 1) {
+                // Get everything after the bucket name and before any query parameters
+                actualS3Key = urlParts[1].split('?')[0];
+            }
+        } else if (s3Key.startsWith('s3://')) {
+            // Remove the s3:// prefix and bucket name
+            actualS3Key = s3Key.replace('s3://elevatex-inventions/', '');
+        }
+        
+        if (!actualS3Key) {
+            throw new Error('Could not extract valid S3 key from URL');
+        }
+        
+        console.log('Using S3 key:', actualS3Key);
+        console.log('Using S3 key type:', typeof actualS3Key);
+        console.log('Using S3 key length:', actualS3Key.length);
+        
+        // Create a new window/tab to display the document
+        const documentWindow = window.open('', '_blank');
+        
+        // Set the document URL to our direct streaming endpoint
+        // Single encode the S3 key to handle special characters properly
+        const encodedKey = encodeURIComponent(actualS3Key);
+        const documentUrl = `https://127.0.0.1:5000/api/files/files/${encodedKey}`;
+        console.log('Document URL:', documentUrl);
+        
+        // Add authentication header to the request
+        const headers = {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Accept': 'application/json'
+        };
+        
+        // Fetch the document with authentication
+        const response = await fetch(documentUrl, {
+            headers: headers,
+            credentials: 'include',
+            rejectUnauthorized: false
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            throw new Error(`Failed to fetch document: ${response.statusText}`);
+        }
+        
+        // Get the blob from the response
+        const blob = await response.blob();
+        
+        // Create a URL for the blob
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Write the document to the new window with error handling
+        documentWindow.document.write(`
+            <html>
+                <head>
+                    <title>Document Viewer</title>
+                    <style>
+                        body { 
+                            margin: 0; 
+                            padding: 20px; 
+                            font-family: Arial, sans-serif;
+                            background-color: #f5f5f5;
+                        }
+                        .pdf-container {
+                            width: 100%;
+                            height: 100vh;
+                            display: flex;
+                            flex-direction: column;
+                        }
+                        .pdf-viewer {
+                            flex: 1;
+                            width: 100%;
+                            border: none;
+                            background: white;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }
+                        .error-message {
+                            color: #dc3545;
+                            padding: 20px;
+                            text-align: center;
+                            background: white;
+                            border-radius: 4px;
+                            margin: 20px 0;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }
+                        .loading {
+                            text-align: center;
+                            padding: 20px;
+                            color: #666;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="pdf-container">
+                        <div id="loading" class="loading">Loading document...</div>
+                        <div id="error" class="error-message" style="display: none;"></div>
+                        <iframe id="pdf-viewer" class="pdf-viewer" style="display: none;"></iframe>
+                    </div>
+                    <script>
+                        const iframe = document.getElementById('pdf-viewer');
+                        const loading = document.getElementById('loading');
+                        const error = document.getElementById('error');
+                        
+                        iframe.onload = function() {
+                            loading.style.display = 'none';
+                            iframe.style.display = 'block';
+                        };
+                        
+                        iframe.onerror = function() {
+                            loading.style.display = 'none';
+                            error.style.display = 'block';
+                            error.textContent = 'Failed to load PDF document. Please try again.';
+                        };
+                        
+                        iframe.src = "${blobUrl}";
+                    </script>
+                </body>
+            </html>
+        `);
+        
+        // Clean up the blob URL when the window is closed
+        documentWindow.onunload = () => {
+            URL.revokeObjectURL(blobUrl);
+        };
+        
+    } catch (error) {
+        console.error('Error viewing document:', error);
+        console.error('Error stack:', error.stack);
+        alert('Failed to view document. Please try again.');
+    }
+}
+
+// Function to handle modal
+function handleModal(invention) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('inventionModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+
+    // Debug logging for invention data
+    console.log('Invention data:', invention);
+    console.log('Documents:', invention.documents);
+
+    // Add new modal to body
+    document.body.insertAdjacentHTML('beforeend', createInventionModal(invention));
+
+    // Get modal elements
+    const modal = document.getElementById('inventionModal');
+    const closeBtn = modal.querySelector('.modal-close');
+
+    // Show modal
+    modal.style.display = 'block';
+
+    // Add event listeners for document view buttons
+    modal.querySelectorAll('.view-document-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // Prevent modal click event
+            const s3Key = btn.dataset.filePath;
+            
+            try {
+                await handleViewDocument(s3Key);
+            } catch (error) {
+                console.error('Error viewing document:', error);
+                alert('Failed to view document. Please try again.');
+            }
+        });
+    });
+
+    // Close modal when clicking close button
+    closeBtn.addEventListener('click', () => {
+        modal.style.display = 'none';
+    });
+
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'block') {
+            modal.style.display = 'none';
+        }
+    });
+}
+
 // Function to create modal HTML
 function createInventionModal(invention) {
+    // Debug logging for invention data
+    console.log('Creating modal for invention:', invention);
+    console.log('Documents in invention:', invention.documents);
+
     return `
         <div class="modal" id="inventionModal">
             <div class="modal-content">
@@ -626,48 +836,28 @@ function createInventionModal(invention) {
                         <h3>Technical Details</h3>
                         <div class="modal-technical">${invention.technical_details}</div>
                     </div>
+                    ${invention.documents && invention.documents.length > 0 ? `
+                        <div class="modal-section">
+                            <h3>Documents</h3>
+                            <div class="documents-list">
+                                ${invention.documents.map(doc => {
+                                    console.log('Document data:', doc);
+                                    return `
+                                        <div class="document-item">
+                                            <span class="document-name">${doc.filename}</span>
+                                            <button class="view-document-btn" data-file-path="${doc.s3_key}">
+                                                View Document
+                                            </button>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
             </div>
         </div>
     `;
-}
-
-// Function to handle modal
-function handleModal(invention) {
-    // Remove existing modal if any
-    const existingModal = document.getElementById('inventionModal');
-    if (existingModal) {
-        existingModal.remove();
-    }
-
-    // Add new modal to body
-    document.body.insertAdjacentHTML('beforeend', createInventionModal(invention));
-
-    // Get modal elements
-    const modal = document.getElementById('inventionModal');
-    const closeBtn = modal.querySelector('.modal-close');
-
-    // Show modal
-    modal.style.display = 'block';
-
-    // Close modal when clicking close button
-    closeBtn.addEventListener('click', () => {
-        modal.style.display = 'none';
-    });
-
-    // Close modal when clicking outside
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.style.display = 'none';
-        }
-    });
-
-    // Close modal with Escape key
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modal.style.display === 'block') {
-            modal.style.display = 'none';
-        }
-    });
 }
 
 // Function to handle request access
@@ -833,18 +1023,103 @@ async function handleMenuClick(menuId) {
                 }
                 break;
             case 'myInvestments':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>My Investments</h2>
-                            <p>Investments made by you will be displayed here...</p>
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
                         </div>
-                    </div>
-                `;
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Investments</h2>
+                                <div class="inventions-grid" id="investments-grid">
+                                    <div class="loading">Loading your investments...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    const response = await fetch('https://127.0.0.1:5000/api/inventions/my-investments', {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Accept': 'application/json'
+                        },
+                        credentials: 'include',
+                        rejectUnauthorized: false
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch investments');
+                    }
+
+                    const data = await response.json();
+                    const investmentsGrid = document.getElementById('investments-grid');
+                    
+                    if (data.investments.length === 0) {
+                        investmentsGrid.innerHTML = `
+                            <div class="no-investments">
+                                <p>You haven't invested in any projects yet.</p>
+                                <p>Browse available projects to find investment opportunities.</p>
+                            </div>
+                        `;
+                    } else {
+                        investmentsGrid.innerHTML = data.investments.map(investment => `
+                            <div class="invention-card" data-invention-id="${investment.id}">
+                                <h3>${investment.title}</h3>
+                                <p>${investment.description}</p>
+                                <div class="invention-meta">
+                                    <span class="status">Access Granted: ${new Date(investment.access_granted_at).toLocaleDateString()}</span>
+                                    <span class="date">Created: ${new Date(investment.created_at).toLocaleDateString()}</span>
+                                </div>
+                                <button class="view-details-btn">View Details</button>
+                            </div>
+                        `).join('');
+
+                        // Add click event listeners to view details buttons
+                        document.querySelectorAll('.view-details-btn').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation(); // Prevent card click event
+                                const inventionId = btn.closest('.invention-card').dataset.inventionId;
+                                try {
+                                    const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+                                        headers: {
+                                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                                            'Accept': 'application/json'
+                                        },
+                                        credentials: 'include',
+                                        rejectUnauthorized: false
+                                    });
+
+                                    if (!response.ok) {
+                                        throw new Error('Failed to fetch invention details');
+                                    }
+
+                                    const invention = await response.json();
+                                    handleModal(invention);
+                                } catch (error) {
+                                    console.error('Error fetching invention details:', error);
+                                    alert('Failed to load invention details. Please try again.');
+                                }
+                            });
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>My Investments</h2>
+                                <div class="error-message">
+                                    Failed to load your investments. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
                 break;
             case 'investmentHistory':
                 contentDiv.innerHTML = `
@@ -953,6 +1228,24 @@ async function handleMenuClick(menuId) {
                                 </div>
                             `;
                         }).join('');
+
+                        // Add event listeners for accept buttons
+                        document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent notification item click
+                                const notificationId = btn.closest('.notification-item').dataset.notificationId;
+                                handleAccessRequestResponse(notificationId, 'accept');
+                            });
+                        });
+
+                        // Add event listeners for reject buttons
+                        document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent notification item click
+                                const notificationId = btn.closest('.notification-item').dataset.notificationId;
+                                handleAccessRequestResponse(notificationId, 'reject');
+                            });
+                        });
                     }
                 } catch (error) {
                     console.error('Error:', error);
@@ -1191,6 +1484,24 @@ async function handleMenuClick(menuId) {
                                 </div>
                             `;
                         }).join('');
+
+                        // Add event listeners for accept buttons
+                        document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent notification item click
+                                const notificationId = btn.closest('.notification-item').dataset.notificationId;
+                                handleAccessRequestResponse(notificationId, 'accept');
+                            });
+                        });
+
+                        // Add event listeners for reject buttons
+                        document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
+                            btn.addEventListener('click', (e) => {
+                                e.stopPropagation(); // Prevent notification item click
+                                const notificationId = btn.closest('.notification-item').dataset.notificationId;
+                                handleAccessRequestResponse(notificationId, 'reject');
+                            });
+                        });
                     }
                 } catch (error) {
                     console.error('Error:', error);

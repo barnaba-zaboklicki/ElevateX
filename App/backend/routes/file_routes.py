@@ -1,10 +1,12 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import os
 import uuid
 from datetime import datetime
-from utils.s3_utils import upload_file_to_s3, generate_presigned_url, delete_file_from_s3
+from utils.s3_utils import upload_file_to_s3, generate_presigned_url, delete_file_from_s3, get_file_from_s3
 from utils.auth_utils import token_required
+import urllib.parse
+import io
 
 file_bp = Blueprint('file', __name__)
 
@@ -79,19 +81,70 @@ def upload_file(current_user):
         'files': uploaded_files
     }), 200
 
-@file_bp.route('/files/<filename>', methods=['GET'])
+@file_bp.route('/files/<path:filename>', methods=['GET'])
 @token_required
 def get_file(current_user, filename):
     """
-    Get a presigned URL for accessing a file.
+    Stream a file directly from S3.
     Requires authentication.
     """
-    url = generate_presigned_url(filename)
-    if url:
-        return jsonify({
-            'url': url
-        }), 200
-    return jsonify({'error': 'File not found'}), 404
+    try:
+        print("\n=== File Request Debug Logs ===")
+        print(f"Request headers: {dict(request.headers)}")
+        print(f"Received request for file: {filename}")
+        print(f"Current user: {current_user.id}")
+        
+        # Decode the URL-encoded filename
+        decoded_filename = urllib.parse.unquote(filename)
+        print(f"Decoded filename: {decoded_filename}")
+        
+        # Handle s3:// prefix if present
+        if decoded_filename.startswith('s3://'):
+            # Remove the s3:// prefix and bucket name
+            decoded_filename = decoded_filename.replace('s3://elevatex-inventions/', '')
+            print(f"Removed s3:// prefix. New filename: {decoded_filename}")
+        
+        # Get the file from S3
+        print(f"Attempting to get file from S3 with key: {decoded_filename}")
+        file_data = get_file_from_s3(decoded_filename)
+        
+        if not file_data:
+            print("File not found in S3 or file is empty")
+            return jsonify({'error': 'File not found or is empty'}), 404
+            
+        print("Successfully retrieved file from S3")
+            
+        # Create a file-like object from the bytes
+        file_obj = file_data['Body']  # Already a BytesIO object from get_file_from_s3
+        
+        # Get the content type from the file data
+        content_type = file_data['ContentType']
+        print(f"Content type: {content_type}")
+        
+        # Get the original filename from the S3 key
+        original_filename = decoded_filename.split('/')[-1]
+        print(f"Original filename: {original_filename}")
+        
+        # Stream the file to the client
+        print("Streaming file to client...")
+        response = send_file(
+            file_obj,
+            mimetype=content_type,
+            as_attachment=False,
+            download_name=original_filename
+        )
+        print("File streamed successfully")
+        print("=== End File Request Debug Logs ===\n")
+        return response
+        
+    except Exception as e:
+        print("\n=== File Request Error Logs ===")
+        print(f"Error streaming file: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        print("=== End File Request Error Logs ===\n")
+        return jsonify({'error': str(e)}), 500
 
 @file_bp.route('/files/<filename>', methods=['DELETE'])
 @token_required
