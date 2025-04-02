@@ -245,34 +245,49 @@ def delete_invention(invention_id):
         if not user or not user.verify_password(password):
             return jsonify({'message': 'Invalid password'}), 401
         
-        # Delete associated documents from S3 if any
+        # Delete associated documents from S3 and database
         documents = Document.query.filter_by(invention_id=invention_id).all()
-        print(f"Found {len(documents)} documents to delete")  # Debug log
-        
         for document in documents:
             try:
-                print(f"Attempting to delete document: {document.filename}")  # Debug log
-                print(f"S3 key: {document.s3_key}")  # Debug log
+                # Delete from S3
+                if document.s3_key:
+                    # Remove s3:// prefix if present
+                    s3_key = document.s3_key.replace('s3://elevatex-inventions/', '')
+                    delete_result = delete_file_from_s3(s3_key)
+                    if not delete_result['success']:
+                        print(f"Warning: Failed to delete file from S3: {s3_key}")
                 
-                # Delete from S3 using the stored key
-                s3_result = delete_file_from_s3(document.s3_key)
-                if not s3_result['success']:
-                    print(f"Warning: Failed to delete file from S3: {s3_result['message']}")
-                    # Continue with deletion even if S3 deletion fails
-                
-                # Delete document record
+                # Delete from database
                 db.session.delete(document)
             except Exception as e:
-                print(f"Warning: Error deleting document: {str(e)}")
-                # Continue with deletion even if document deletion fails
+                print(f"Warning: Error deleting document {document.id}: {str(e)}")
         
-        # Delete the invention
+        # Delete associated access requests
+        access_requests = AccessRequest.query.filter_by(invention_id=invention_id).all()
+        for access_request in access_requests:
+            try:
+                db.session.delete(access_request)
+            except Exception as e:
+                print(f"Warning: Error deleting access request {access_request.id}: {str(e)}")
+        
+        # Delete associated notifications - both by invention_id and reference_id
+        notifications = Notification.query.filter(
+            (Notification.reference_id == invention_id) | 
+            (Notification.reference_id.in_([req.id for req in access_requests]))
+        ).all()
+        
+        for notification in notifications:
+            try:
+                db.session.delete(notification)
+            except Exception as e:
+                print(f"Warning: Error deleting notification {notification.id}: {str(e)}")
+        
+        # Finally, delete the invention
         db.session.delete(invention)
         db.session.commit()
         
-        return jsonify({
-            'message': 'Invention deleted successfully'
-        }), 200
+        return jsonify({'message': 'Invention deleted successfully'}), 200
+        
     except Exception as e:
         db.session.rollback()
         print(f"Error deleting invention: {str(e)}")  # Debug log

@@ -227,7 +227,7 @@ function createIdeaSubmissionForm() {
 
 // Function to handle idea submission
 async function handleIdeaSubmission(e) {
-    e.preventDefault();
+        e.preventDefault();
     
     const form = e.target;
     const formData = new FormData(form);
@@ -297,7 +297,7 @@ async function handleIdeaSubmission(e) {
                 
                 // Clear user data and redirect to login
                 localStorage.removeItem('token');
-                localStorage.removeItem('user');
+        localStorage.removeItem('user');
                 alert('Your session has expired. Please log in again.');
                 window.location.href = '../landing/index.html';
                 return;
@@ -368,9 +368,9 @@ async function fetchAvailableProjects() {
         if (!response.ok) {
             if (response.status === 401) {
                 console.error('Authentication failed - redirecting to login');
-                localStorage.removeItem('token');
+        localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                window.location.href = '../landing/index.html';
+        window.location.href = '../landing/index.html';
                 return;
             }
             const errorData = await response.json();
@@ -563,7 +563,7 @@ function handlePasswordConfirmationModal(inventionId) {
 
     // Handle form submission
     form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+            e.preventDefault();
         const password = form.querySelector('#password').value;
 
         try {
