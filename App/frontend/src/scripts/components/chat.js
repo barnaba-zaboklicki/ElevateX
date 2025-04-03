@@ -191,19 +191,31 @@ class Chat {
                 throw new Error('You must be logged in to send messages');
             }
 
+            console.log('Original message content:', content);
+
             // Encrypt the message content if we have a public key
             let encryptedContent = content;
             if (this.publicKey) {
+                console.log('Public key available, encrypting message...');
                 const encoder = new TextEncoder();
                 const encodedContent = encoder.encode(content);
+                console.log('Encoded content:', encodedContent);
+                
                 encryptedContent = await window.crypto.subtle.encrypt(
                     { name: 'RSA-OAEP' },
                     this.publicKey,
                     encodedContent
                 );
+                console.log('Encrypted content (ArrayBuffer):', encryptedContent);
+                
+                // Convert to base64 for transmission
                 encryptedContent = btoa(String.fromCharCode(...new Uint8Array(encryptedContent)));
+                console.log('Encrypted content (base64):', encryptedContent);
+            } else {
+                console.log('No public key available, sending unencrypted message');
             }
 
+            console.log('Sending message to server...');
             const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/send`, {
                 method: 'POST',
                 headers: {
@@ -223,13 +235,19 @@ class Chat {
             }
 
             const data = await response.json();
-            this.messages.push(data.message);
-            this.render();
+            console.log('Server response:', data);
             
-            // Clear the input
-            const textarea = this.container.querySelector('textarea');
-            if (textarea) {
-                textarea.value = '';
+            if (data.message) {
+                this.messages.push(data.message);
+                this.render();
+                
+                // Clear the input
+                const textarea = this.container.querySelector('textarea');
+                if (textarea) {
+                    textarea.value = '';
+                }
+            } else {
+                throw new Error('Invalid response format');
             }
         } catch (error) {
             console.error('Error sending message:', error);

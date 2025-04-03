@@ -9,6 +9,7 @@ class Message(db.Model):
     sender_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
     encrypted_content = db.Column(db.Text, nullable=False)
+    s3_key = db.Column(db.String(255))  # Store the S3 key for the encrypted message
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
@@ -21,5 +22,6 @@ class Message(db.Model):
             'sender_id': self.sender_id,
             'content': self.content,
             'encrypted_content': self.encrypted_content,
+            's3_key': self.s3_key,
             'created_at': self.created_at.isoformat()
         } 

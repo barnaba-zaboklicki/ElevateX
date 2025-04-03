@@ -9,6 +9,7 @@ from models.chat_participant import ChatParticipant
 from models.chat_key import ChatKey
 from models.access_request import AccessRequest
 from database import db
+from utils.s3_utils import store_encrypted_message
 
 message_bp = Blueprint('message', __name__)
 
@@ -21,6 +22,9 @@ def get_chats():
         # Get all chats where the current user is a participant
         participant_chats = ChatParticipant.query.filter_by(user_id=current_user_id).all()
         chat_ids = [p.chat_id for p in participant_chats]
+        
+        if not chat_ids:
+            return jsonify({'chats': []}), 200
         
         # Get the chats
         chats = Chat.query.filter(Chat.id.in_(chat_ids)).all()
@@ -38,6 +42,9 @@ def get_chats():
                 continue
                 
             other_user = User.query.get(other_participant.user_id)
+            if not other_user:
+                continue
+                
             other_user_name = f"{other_user.first_name} {other_user.last_name}"
             
             # Get the last message
@@ -54,6 +61,7 @@ def get_chats():
         
         return jsonify({'chats': formatted_chats}), 200
     except Exception as e:
+        print(f"Error fetching chats: {str(e)}")
         return jsonify({
             'message': 'Failed to fetch chats',
             'error': str(e)
@@ -181,23 +189,66 @@ def get_chat_messages(chat_id):
         if not participant:
             return jsonify({'message': 'Unauthorized'}), 403
         
-        # Get all messages for this chat
-        messages = Message.query.filter_by(chat_id=chat_id).order_by(Message.created_at.asc()).all()
+        # Get chat details
+        chat = Chat.query.get(chat_id)
+        if not chat:
+            return jsonify({'message': 'Chat not found'}), 404
+            
+        # Get the other participant
+        other_participant = ChatParticipant.query.filter(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id != current_user_id
+        ).first()
         
-        # Format the response
+        if not other_participant:
+            return jsonify({'message': 'Chat participant not found'}), 404
+            
+        other_user = User.query.get(other_participant.user_id)
+        if not other_user:
+            return jsonify({'message': 'User not found'}), 404
+            
+        # Get the other user's public key from ChatKey
+        other_user_key = ChatKey.query.filter_by(
+            chat_id=chat_id,
+            user_id=other_participant.user_id
+        ).first()
+        
+        if not other_user_key:
+            return jsonify({'message': 'Chat key not found'}), 404
+        
+        # Get messages for this chat
+        messages = Message.query.filter_by(chat_id=chat_id).order_by(Message.created_at).all()
+        
+        # Format messages with sender info
         formatted_messages = []
-        for message in messages:
-            sender = User.query.get(message.sender_id)
+        for msg in messages:
+            sender = User.query.get(msg.sender_id)
             formatted_messages.append({
-                'id': message.id,
-                'content': message.content,
-                'sender_id': message.sender_id,
+                'id': msg.id,
+                'content': msg.content,
+                'encrypted_content': msg.encrypted_content,
+                's3_key': msg.s3_key,
+                'sender_id': msg.sender_id,
                 'sender_name': f"{sender.first_name} {sender.last_name}",
-                'created_at': message.created_at.isoformat()
+                'created_at': msg.created_at.isoformat(),
+                'is_sender': msg.sender_id == current_user_id
             })
         
-        return jsonify({'messages': formatted_messages}), 200
+        # Get invention_id from the chat's invention relationship
+        invention_id = chat.invention.id if chat.invention else None
+        
+        return jsonify({
+            'chat_id': chat_id,
+            'invention_id': invention_id,
+            'other_user': {
+                'id': other_user.id,
+                'name': f"{other_user.first_name} {other_user.last_name}",
+                'public_key': other_user_key.public_key
+            },
+            'messages': formatted_messages
+        }), 200
     except Exception as e:
+        print(f"Error in get_chat_messages: {str(e)}")
         return jsonify({
             'message': 'Failed to fetch messages',
             'error': str(e)
@@ -220,28 +271,58 @@ def send_message(chat_id):
         
         data = request.get_json()
         content = data.get('content')
+        encrypted_content = data.get('encrypted_content')
         
-        if not content:
-            return jsonify({'message': 'Message content is required'}), 400
+        print(f"Received message - Content: {content}, Encrypted: {encrypted_content[:50]}...")  # Log first 50 chars
+        
+        if not content or not encrypted_content:
+            return jsonify({'message': 'Message content and encrypted content are required'}), 400
         
         # Create new message
         new_message = Message(
             chat_id=chat_id,
             sender_id=current_user_id,
             content=content,
-            encrypted_content=content,  # TODO: Implement proper encryption
+            encrypted_content=encrypted_content,
             created_at=datetime.now(timezone.utc)
         )
         
         db.session.add(new_message)
+        db.session.flush()  # Get the message ID
+        
+        print(f"Created message with ID: {new_message.id}")  # Log message ID
+        
+        # Store encrypted message in S3
+        print("Attempting to store message in S3...")  # Log S3 attempt
+        s3_result = store_encrypted_message(chat_id, new_message.id, encrypted_content)
+        print(f"S3 result: {s3_result}")  # Log S3 result
+        
+        if not s3_result['success']:
+            db.session.rollback()
+            return jsonify({
+                'message': 'Failed to store encrypted message',
+                'error': s3_result['message']
+            }), 500
+        
+        # Update message with S3 key
+        new_message.s3_key = s3_result['s3_key']
         db.session.commit()
         
+        # Get sender info for response
+        sender = User.query.get(current_user_id)
+        
         return jsonify({
-            'message': 'Message sent successfully',
-            'message_id': new_message.id
+            'message': {
+                'id': new_message.id,
+                'content': content,
+                'sender_id': current_user_id,
+                'sender_name': f"{sender.first_name} {sender.last_name}",
+                'created_at': new_message.created_at.isoformat()
+            }
         }), 201
     except Exception as e:
         db.session.rollback()
+        print(f"Error in send_message: {str(e)}")  # Log the full error
         return jsonify({
             'message': 'Failed to send message',
             'error': str(e)

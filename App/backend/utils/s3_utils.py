@@ -4,6 +4,8 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from config.s3_config import URL_EXPIRATION
 import io
+from datetime import datetime
+import base64
 
 load_dotenv()
 
@@ -266,4 +268,76 @@ def get_file_from_s3(filename):
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         print("=== End S3 File Retrieval Error Logs ===\n")
-        return None 
+        return None
+
+def store_encrypted_message(chat_id, message_id, encrypted_content):
+    """
+    Store an encrypted message in AWS S3.
+    
+    Args:
+        chat_id (int): The ID of the chat
+        message_id (int): The ID of the message
+        encrypted_content (str): The base64 encoded encrypted message content
+        
+    Returns:
+        dict: A dictionary containing success status and S3 key or error message
+    """
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
+        
+        # Get bucket name from environment
+        bucket_name = os.getenv('S3_BUCKET_NAME', 'elevatex-inventions')
+        if not bucket_name:
+            raise ValueError("S3_BUCKET_NAME environment variable is not set")
+            
+        print(f"Storing message in S3 - Chat ID: {chat_id}, Message ID: {message_id}")
+        print(f"Encrypted content type: {type(encrypted_content)}")
+        print(f"Encrypted content length: {len(encrypted_content)}")
+        
+        # Generate a unique key for the message
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        s3_key = f"chats/messages/{chat_id}/{message_id}_{timestamp}.enc"
+        print(f"Generated S3 key: {s3_key}")
+        
+        # Decode base64 content
+        print("Attempting to decode base64 content...")
+        try:
+            decoded_content = base64.b64decode(encrypted_content)
+            print(f"Successfully decoded base64 content. Length: {len(decoded_content)}")
+        except Exception as e:
+            print(f"Error decoding base64 content: {str(e)}")
+            raise ValueError(f"Invalid base64 content: {str(e)}")
+        
+        # Upload to S3
+        print(f"Uploading to S3 bucket: {bucket_name}")
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=decoded_content,
+            ContentType='application/octet-stream',
+            ServerSideEncryption='AES256'
+        )
+        
+        return {
+            'success': True,
+            's3_key': s3_key
+        }
+        
+    except ClientError as e:
+        print(f"AWS S3 error: {str(e)}")
+        return {
+            'success': False,
+            'message': f"AWS S3 error: {str(e)}"
+        }
+    except Exception as e:
+        print(f"Unexpected error storing message in S3: {str(e)}")
+        return {
+            'success': False,
+            'message': str(e)
+        } 
