@@ -6,6 +6,8 @@ from models.chat import Chat
 from models.user import User
 from models.invention import Invention
 from models.chat_participant import ChatParticipant
+from models.chat_key import ChatKey
+from models.access_request import AccessRequest
 from database import db
 
 message_bp = Blueprint('message', __name__)
@@ -65,6 +67,9 @@ def start_chat():
     try:
         data = request.get_json()
         invention_id = data.get('invention_id')
+        title = data.get('title')
+        public_key = data.get('public_key')
+        private_key = data.get('private_key')
         
         if not invention_id:
             return jsonify({'message': 'Invention ID is required'}), 400
@@ -78,7 +83,6 @@ def start_chat():
         current_user = User.query.get(current_user_id)
         if current_user.role == 'investor':
             # Check if investor has accepted access
-            from models.access_request import AccessRequest
             access_request = AccessRequest.query.filter_by(
                 invention_id=invention_id,
                 investor_id=current_user_id,
@@ -90,7 +94,13 @@ def start_chat():
         
         # Check if chat already exists
         existing_chat = Chat.query.join(ChatParticipant).filter(
-            ChatParticipant.user_id == current_user_id
+            ChatParticipant.user_id == current_user_id,
+            ChatParticipant.chat_id == Chat.id,
+            Chat.id.in_(
+                db.session.query(ChatParticipant.chat_id).filter(
+                    ChatParticipant.user_id == invention.inventor_id
+                )
+            )
         ).first()
         
         if existing_chat:
@@ -101,7 +111,7 @@ def start_chat():
         
         # Create new chat
         new_chat = Chat(
-            title=f"Chat about {invention.title}",
+            title=title or f"Chat about {invention.title}",
             created_at=datetime.now(timezone.utc)
         )
         db.session.add(new_chat)
@@ -119,6 +129,27 @@ def start_chat():
             user_id=current_user_id,
             role='investor'
         )
+        
+        # Store encryption keys for both participants
+        if public_key and private_key:
+            # Store keys for inventor
+            inventor_key = ChatKey(
+                chat_id=new_chat.id,
+                user_id=invention.inventor_id,
+                public_key=public_key,
+                private_key=private_key
+            )
+            
+            # Store keys for investor
+            investor_key = ChatKey(
+                chat_id=new_chat.id,
+                user_id=current_user_id,
+                public_key=public_key,
+                private_key=private_key
+            )
+            
+            db.session.add(inventor_key)
+            db.session.add(investor_key)
         
         db.session.add(inventor_participant)
         db.session.add(investor_participant)

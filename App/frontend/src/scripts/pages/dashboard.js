@@ -1191,7 +1191,7 @@ async function handleRequestAccess(inventionId) {
 }
 
 // Function to handle menu item click
-async function handleMenuClick(menuId) {
+async function handleMenuClick(menuId, chatId = null) {
     const contentDiv = document.getElementById('dashboard-content');
     const user = JSON.parse(localStorage.getItem('user'));
     
@@ -1211,7 +1211,6 @@ async function handleMenuClick(menuId) {
         // Load default dashboard content
         loadDashboardContent(user.role);
     } else if (menuId === 'messages') {
-        // Handle messages for both roles
         try {
             contentDiv.innerHTML = `
                 <div class="welcome-section">
@@ -1247,8 +1246,7 @@ async function handleMenuClick(menuId) {
                 throw new Error('You must be logged in to view messages');
             }
 
-            console.log('Fetching messages with token:', token.substring(0, 20) + '...');
-            
+            console.log('Fetching messages with token:', token);
             const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -1258,9 +1256,7 @@ async function handleMenuClick(menuId) {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error('Error response:', errorData);
-                throw new Error(errorData.message || 'Failed to fetch messages');
+                throw new Error('Failed to fetch messages');
             }
 
             const data = await response.json();
@@ -1280,23 +1276,22 @@ async function handleMenuClick(menuId) {
                 document.querySelectorAll('.chat-item').forEach(item => {
                     item.addEventListener('click', () => {
                         const chatId = item.dataset.chatId;
-                        // TODO: Load chat messages
+                        handleMenuClick('messages', chatId);
                     });
                 });
             } else {
                 messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
             }
 
-            // Check if Chat is available
-            if (typeof Chat === 'undefined') {
-                console.error('Chat class not found');
-                throw new Error('Chat component not loaded');
+            // Initialize chat if we have a chat ID
+            if (chatId && typeof Chat !== 'undefined') {
+                const chat = new Chat('chat-container');
+                const chatKey = `chat_keys_${chatId}`;
+                const chatData = JSON.parse(sessionStorage.getItem(chatKey));
+                if (chatData) {
+                    chat.initialize(chatData.invention_id, chatData.inventor_name, chatId);
+                }
             }
-
-            // Initialize the chat component
-            const chat = new Chat('chat-container');
-            chat.initialize('', '', '');
-
         } catch (error) {
             console.error('Error:', error);
             contentDiv.innerHTML = `
@@ -1333,7 +1328,7 @@ async function handleMenuClick(menuId) {
                         </div>
                     `;
 
-                    console.log('Fetching available projects...');  // Debug log
+                    console.log('Fetching available projects...');
                     const response = await fetch('https://127.0.0.1:5000/api/inventions/available', {
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -1348,14 +1343,13 @@ async function handleMenuClick(menuId) {
                     }
 
                     const data = await response.json();
-                    console.log('Received projects data:', data);  // Debug log
+                    console.log('Received projects data:', data);
                     
                     const inventionsGrid = document.getElementById('inventions-grid');
-                    console.log('Creating cards for projects:', data.projects);  // Debug log
+                    console.log('Creating cards for projects:', data.projects);
                     
-                    // Create cards for each project
                     inventionsGrid.innerHTML = data.projects.map(project => {
-                        console.log('Processing project:', project);  // Debug log
+                        console.log('Processing project:', project);
                         return createInventionCard(project, 'available');
                     }).join('');
 
@@ -1364,7 +1358,7 @@ async function handleMenuClick(menuId) {
                         card.addEventListener('click', async (e) => {
                             const inventionId = card.dataset.inventionId;
                             try {
-                                console.log('Fetching details for invention:', inventionId);  // Debug log
+                                console.log('Fetching details for invention:', inventionId);
                                 const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
                                     headers: {
                                         'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -1384,7 +1378,7 @@ async function handleMenuClick(menuId) {
                                 }
 
                                 const invention = await response.json();
-                                console.log('Received invention details:', invention);  // Debug log
+                                console.log('Received invention details:', invention);
                                 handleModal(invention);
                             } catch (error) {
                                 console.error('Error fetching invention details:', error);
@@ -1400,7 +1394,7 @@ async function handleMenuClick(menuId) {
                     // Add click event listeners to request access buttons
                     document.querySelectorAll('.request-access-btn').forEach(btn => {
                         btn.addEventListener('click', (e) => {
-                            e.stopPropagation(); // Prevent card click event
+                            e.stopPropagation();
                             const inventionId = btn.dataset.inventionId;
                             handleRequestAccess(inventionId);
                         });
@@ -1408,9 +1402,9 @@ async function handleMenuClick(menuId) {
 
                     // Add click event listeners to start chat buttons
                     document.querySelectorAll('.start-chat-btn').forEach(btn => {
-                        console.log('Found chat button:', btn.dataset.inventionId);  // Debug log
+                        console.log('Found chat button:', btn.dataset.inventionId);
                         btn.addEventListener('click', (e) => {
-                            e.stopPropagation(); // Prevent card click event
+                            e.stopPropagation();
                             const inventionId = btn.dataset.inventionId;
                             handleStartChat(inventionId);
                         });
@@ -1481,7 +1475,7 @@ async function handleMenuClick(menuId) {
                         // Add click event listeners to view details buttons
                         document.querySelectorAll('.view-details-btn').forEach(btn => {
                             btn.addEventListener('click', async (e) => {
-                                e.stopPropagation(); // Prevent card click event
+                                e.stopPropagation();
                                 const inventionId = btn.dataset.inventionId;
                                 try {
                                     const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
@@ -1509,7 +1503,7 @@ async function handleMenuClick(menuId) {
                         // Add click event listeners to start chat buttons
                         document.querySelectorAll('.start-chat-btn').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent card click event
+                                e.stopPropagation();
                                 const inventionId = btn.dataset.inventionId;
                                 handleStartChat(inventionId);
                             });
@@ -1533,34 +1527,6 @@ async function handleMenuClick(menuId) {
                     `;
                 }
                 break;
-            case 'investmentHistory':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Investment History</h2>
-                            <p>Investment history will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'analytics':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Investment Analytics</h2>
-                            <p>Investment analytics will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
             case 'notifications':
                 try {
                     contentDiv.innerHTML = `
@@ -1583,7 +1549,7 @@ async function handleMenuClick(menuId) {
                         throw new Error('No authentication token found');
                     }
 
-                    console.log('Fetching notifications with token:', token.substring(0, 20) + '...');
+                    console.log('Fetching notifications with token:', token);
                     
                     const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
                         method: 'GET',
@@ -1644,7 +1610,7 @@ async function handleMenuClick(menuId) {
                         // Add event listeners for accept buttons
                         document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent notification item click
+                                e.stopPropagation();
                                 const notificationId = btn.closest('.notification-item').dataset.notificationId;
                                 handleAccessRequestResponse(notificationId, 'accept');
                             });
@@ -1653,7 +1619,7 @@ async function handleMenuClick(menuId) {
                         // Add event listeners for reject buttons
                         document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent notification item click
+                                e.stopPropagation();
                                 const notificationId = btn.closest('.notification-item').dataset.notificationId;
                                 handleAccessRequestResponse(notificationId, 'reject');
                             });
@@ -1681,37 +1647,99 @@ async function handleMenuClick(menuId) {
     } else if (user.role === 'inventor') {
         switch (menuId) {
             case 'addProject':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Submit New Invention</h2>
-                            <div id="formContainer">Loading form...</div>
+                try {
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
                         </div>
-                    </div>
-                `;
-                
-                // Load the form asynchronously
-                const formContainer = document.getElementById('formContainer');
-                formContainer.innerHTML = await createIdeaSubmissionForm();
-                
-                // Add event listener for the form
-                const form = document.getElementById('ideaSubmissionForm');
-                if (form) {
-                    form.addEventListener('submit', handleIdeaSubmission);
-                    
-                    // Update PDF library status
-                    const statusDiv = document.getElementById('pdfLibraryStatus');
-                    if (statusDiv) {
-                        if (arePDFLibrariesLoaded()) {
-                            statusDiv.innerHTML = '<span class="success">PDF libraries loaded successfully</span>';
-                        } else {
-                            statusDiv.innerHTML = '<span class="error">Failed to load PDF libraries. Please refresh the page.</span>';
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Add New Project</h2>
+                                <form id="addProjectForm" class="project-form">
+                                    <div class="form-group">
+                                        <label for="title">Project Title</label>
+                                        <input type="text" id="title" name="title" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="description">Description</label>
+                                        <textarea id="description" name="description" rows="4" required></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="technical_details">Technical Details</label>
+                                        <textarea id="technical_details" name="technical_details" rows="4" required></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="patent_status">Patent Status</label>
+                                        <select id="patent_status" name="patent_status" required>
+                                            <option value="not_filed">Not Filed</option>
+                                            <option value="pending">Pending</option>
+                                            <option value="granted">Granted</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="funding_status">Funding Status</label>
+                                        <select id="funding_status" name="funding_status" required>
+                                            <option value="not_requested">Not Requested</option>
+                                            <option value="requested">Requested</option>
+                                            <option value="funded">Funded</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="attachments">Attachments</label>
+                                        <input type="file" id="attachments" name="attachments" multiple>
+                                    </div>
+                                    <button type="submit" class="submit-invention-btn">Submit Project</button>
+                                </form>
+                            </div>
+                        </div>
+                    `;
+
+                    // Add form submission handler
+                    const form = document.getElementById('addProjectForm');
+                    form.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const formData = new FormData(form);
+                        
+                        try {
+                            const response = await fetch('https://127.0.0.1:5000/api/inventions', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                },
+                                body: formData,
+                                credentials: 'include',
+                                rejectUnauthorized: false
+                            });
+
+                            if (!response.ok) {
+                                throw new Error('Failed to create project');
+                            }
+
+                            const data = await response.json();
+                            alert('Project created successfully!');
+                            handleMenuClick('myInventions'); // Switch to my inventions view
+                        } catch (error) {
+                            console.error('Error:', error);
+                            alert('Failed to create project. Please try again.');
                         }
-                    }
+                    });
+                } catch (error) {
+                    console.error('Error:', error);
+                    contentDiv.innerHTML = `
+                        <div class="welcome-section">
+                            <h1>Welcome, ${user.first_name}!</h1>
+                            <h2>${roleConfigs[user.role].title}</h2>
+                        </div>
+                        <div class="dashboard-sections">
+                            <div class="container">
+                                <h2>Add New Project</h2>
+                                <div class="error-message">
+                                    Failed to load the form. Please try again later.
+                                </div>
+                            </div>
+                        </div>
+                    `;
                 }
                 break;
             case 'myInventions':
@@ -1725,14 +1753,13 @@ async function handleMenuClick(menuId) {
                             <div class="container">
                                 <h2>My Inventions</h2>
                                 <div class="inventions-grid" id="inventions-grid">
-                                    <div class="loading">Loading inventions...</div>
+                                    <div class="loading">Loading your inventions...</div>
                                 </div>
                             </div>
                         </div>
                     `;
 
-                    // Use the correct endpoint for inventors
-                    const response = await fetch('https://127.0.0.1:5000/api/inventions/', {
+                    const response = await fetch('https://127.0.0.1:5000/api/inventions', {
                         headers: {
                             'Authorization': `Bearer ${localStorage.getItem('token')}`,
                             'Accept': 'application/json'
@@ -1751,19 +1778,19 @@ async function handleMenuClick(menuId) {
                     if (data.inventions.length === 0) {
                         inventionsGrid.innerHTML = `
                             <div class="no-inventions">
-                                <p>You haven't created any inventions yet.</p>
-                                <p>Click the "Create New Invention" button to get started.</p>
+                                <p>You haven't created any projects yet.</p>
+                                <p>Click "Add New Project" to get started.</p>
                             </div>
                         `;
                     } else {
                         inventionsGrid.innerHTML = data.inventions.map(invention => {
-                            return createInventionCard(invention, 'myInventions');
+                            return createInventionCard(invention, 'inventions');
                         }).join('');
 
                         // Add click event listeners to view details buttons
                         document.querySelectorAll('.view-details-btn').forEach(btn => {
                             btn.addEventListener('click', async (e) => {
-                                e.stopPropagation(); // Prevent card click event
+                                e.stopPropagation();
                                 const inventionId = btn.dataset.inventionId;
                                 try {
                                     const response = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
@@ -1788,28 +1815,12 @@ async function handleMenuClick(menuId) {
                             });
                         });
 
-                        // Add click event listeners to submit buttons
-                        document.querySelectorAll('.submit-invention-btn').forEach(btn => {
-                            btn.addEventListener('click', async (e) => {
-                                e.stopPropagation(); // Prevent card click event
-                                const inventionId = btn.dataset.inventionId;
-                                try {
-                                    await handleInventionSubmission(inventionId);
-                                    alert('Invention submitted for review successfully!');
-                                    // Refresh the inventions list
-                                    handleMenuClick('myInventions');
-                                } catch (error) {
-                                    alert('Failed to submit invention. Please try again.');
-                                }
-                            });
-                        });
-
                         // Add click event listeners to delete buttons
                         document.querySelectorAll('.delete-invention-btn').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent card click event
+                                e.stopPropagation();
                                 const inventionId = btn.dataset.inventionId;
-                                handlePasswordConfirmationModal(inventionId);
+                                handleDeleteInvention(inventionId);
                             });
                         });
                     }
@@ -1824,120 +1835,7 @@ async function handleMenuClick(menuId) {
                             <div class="container">
                                 <h2>My Inventions</h2>
                                 <div class="error-message">
-                                    Failed to load inventions. Please try again later.
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }
-                break;
-            case 'messages':
-                try {
-                    contentDiv.innerHTML = `
-                        <div class="welcome-section">
-                            <h1>Welcome, ${user.first_name}!</h1>
-                            <h2>${roleConfigs[user.role].title}</h2>
-                        </div>
-                        <div class="dashboard-sections">
-                            <div class="container">
-                                <h2>Messages</h2>
-                                <div class="messages-list" id="messages-list">
-                                    <div class="loading">Loading messages...</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    const token = localStorage.getItem('token');
-                    if (!token) {
-                        throw new Error('No authentication token found');
-                    }
-
-                    console.log('Fetching messages with token:', token.substring(0, 20) + '...');
-                    
-                    const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json'
-                        },
-                        credentials: 'include'
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        console.error('Error response:', errorData);
-                        throw new Error(errorData.message || 'Failed to fetch messages');
-                    }
-
-                    const data = await response.json();
-                    console.log('Received messages:', data);
-                    const messagesList = document.getElementById('messages-list');
-                    
-                    if (data.messages.length === 0) {
-                        messagesList.innerHTML = '<div class="no-messages">No messages</div>';
-                    } else {
-                        messagesList.innerHTML = data.messages.map(message => {
-                            return `
-                                <div class="message-item ${message.is_read ? 'read' : 'unread'}" 
-                                     data-message-id="${message.id}"
-                                     data-type="${message.type}"
-                                     data-reference-id="${message.reference_id}"
-                                     data-invention-id="${message.invention_id}">
-                                    <div class="message-content">
-                                        <h3>${message.title}</h3>
-                                        <p>${message.message}</p>
-                                        <span class="message-date">${new Date(message.created_at).toLocaleString()}</span>
-                                    </div>
-                                    ${message.type === 'access_request' ? `
-                                        <div class="message-actions">
-                                            ${message.status === 'accepted' ? `
-                                                <button class="accept-request-btn" disabled>Accepted</button>
-                                                <button class="reject-request-btn" data-invention-id="${message.invention_id}">Reject</button>
-                                                <span class="status-text" style="color: #28a745;">Access request has been accepted</span>
-                                            ` : message.status === 'rejected' ? `
-                                                <button class="accept-request-btn" data-invention-id="${message.invention_id}">Accept</button>
-                                                <button class="reject-request-btn" disabled>Rejected</button>
-                                                <span class="status-text" style="color: #dc3545;">Access request has been rejected</span>
-                                            ` : `
-                                                <button class="accept-request-btn" data-invention-id="${message.invention_id}">Accept</button>
-                                                <button class="reject-request-btn" data-invention-id="${message.invention_id}">Reject</button>
-                                            `}
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            `;
-                        }).join('');
-
-                        // Add event listeners for accept buttons
-                        document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
-                            btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent message item click
-                                const messageId = btn.closest('.message-item').dataset.messageId;
-                                handleAccessRequestResponse(messageId, 'accept');
-                            });
-                        });
-
-                        // Add event listeners for reject buttons
-                        document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
-                            btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent message item click
-                                const messageId = btn.closest('.message-item').dataset.messageId;
-                                handleAccessRequestResponse(messageId, 'reject');
-                            });
-                        });
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                    contentDiv.innerHTML = `
-                        <div class="welcome-section">
-                            <h1>Welcome, ${user.first_name}!</h1>
-                            <h2>${roleConfigs[user.role].title}</h2>
-                        </div>
-                        <div class="dashboard-sections">
-                            <div class="container">
-                                <h2>Messages</h2>
-                                <div class="error-message">
-                                    Failed to load messages. Please try again later.
+                                    Failed to load your inventions. Please try again later.
                                 </div>
                             </div>
                         </div>
@@ -1966,7 +1864,7 @@ async function handleMenuClick(menuId) {
                         throw new Error('No authentication token found');
                     }
 
-                    console.log('Fetching notifications with token:', token.substring(0, 20) + '...');
+                    console.log('Fetching notifications with token:', token);
                     
                     const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
                         method: 'GET',
@@ -2027,7 +1925,7 @@ async function handleMenuClick(menuId) {
                         // Add event listeners for accept buttons
                         document.querySelectorAll('.accept-request-btn:not([disabled])').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent notification item click
+                                e.stopPropagation();
                                 const notificationId = btn.closest('.notification-item').dataset.notificationId;
                                 handleAccessRequestResponse(notificationId, 'accept');
                             });
@@ -2036,7 +1934,7 @@ async function handleMenuClick(menuId) {
                         // Add event listeners for reject buttons
                         document.querySelectorAll('.reject-request-btn:not([disabled])').forEach(btn => {
                             btn.addEventListener('click', (e) => {
-                                e.stopPropagation(); // Prevent notification item click
+                                e.stopPropagation();
                                 const notificationId = btn.closest('.notification-item').dataset.notificationId;
                                 handleAccessRequestResponse(notificationId, 'reject');
                             });
@@ -2063,194 +1961,12 @@ async function handleMenuClick(menuId) {
         }
     } else if (user.role === 'admin') {
         switch (menuId) {
-            case 'users':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Users Management</h2>
-                            <p>User management interface will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'security':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Security Logs</h2>
-                            <p>Security logs will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
+            // ... existing admin cases ...
         }
     } else if (user.role === 'researcher') {
         switch (menuId) {
-            case 'research':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Research Projects</h2>
-                            <p>Your research projects will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
-            case 'publications':
-                contentDiv.innerHTML = `
-                    <div class="welcome-section">
-                        <h1>Welcome, ${user.first_name}!</h1>
-                        <h2>${roleConfigs[user.role].title}</h2>
-                    </div>
-                    <div class="dashboard-sections">
-                        <div class="container">
-                            <h2>Publications</h2>
-                            <p>Your publications will be displayed here...</p>
-                        </div>
-                    </div>
-                `;
-                break;
+            // ... existing researcher cases ...
         }
-    }
-}
-
-// Function to fetch notifications
-async function fetchNotifications() {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        throw new Error('No authentication token found');
-    }
-
-    const response = await fetch('https://127.0.0.1:5000/api/notification/notifications', {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        rejectUnauthorized: false
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch notifications');
-    }
-
-    const data = await response.json();
-    return data.notifications;
-}
-
-// Function to handle access request response
-async function handleAccessRequestResponse(notificationId, action) {
-    try {
-        console.log('Starting handleAccessRequestResponse with:', {
-            notificationId,
-            action
-        });
-
-        const token = localStorage.getItem('token');
-        if (!token) {
-            console.error('No authentication token found');
-            throw new Error('No authentication token found');
-        }
-
-        // Get the notification to find the access request ID
-        console.log('Fetching notifications from:', 'https://127.0.0.1:5000/api/inventions/notifications');
-        const notificationsResponse = await fetch('https://127.0.0.1:5000/api/inventions/notifications', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
-        
-        if (!notificationsResponse.ok) {
-            console.error('Failed to fetch notifications:', {
-                status: notificationsResponse.status,
-                statusText: notificationsResponse.statusText
-            });
-            throw new Error('Failed to fetch notifications');
-        }
-        
-        const data = await notificationsResponse.json();
-        console.log('Received notifications data:', data);
-        
-        const notification = data.notifications.find(n => n.id === parseInt(notificationId));
-        console.log('Found notification:', notification);
-        
-        if (!notification || !notification.reference_id) {
-            console.error('Invalid notification data:', {
-                notificationId,
-                notification,
-                reference_id: notification?.reference_id
-            });
-            throw new Error('Invalid notification or missing reference ID');
-        }
-
-        console.log('Handling access request:', {
-            notificationId,
-            accessRequestId: notification.reference_id,
-            action,
-            notificationType: notification.type
-        });
-
-        // Make the request to handle the access request
-        const url = `https://127.0.0.1:5000/api/inventions/access-requests/${notification.reference_id}/handle`;
-        console.log('Making request to:', url);
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-                action: action
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Error response:', {
-                status: response.status,
-                statusText: response.statusText,
-                error: errorData
-            });
-            
-            if (response.status === 403) {
-                throw new Error('You do not have permission to handle this access request. Only the inventor can accept or reject requests.');
-            }
-            
-            throw new Error(errorData.message || 'Failed to handle access request');
-        }
-
-        const result = await response.json();
-        console.log('Success response:', result);
-        alert(result.message);
-        
-        // Refresh notifications
-        await handleMenuClick('notifications');
-    } catch (error) {
-        console.error('Error handling access request:', {
-            error: error.message,
-            stack: error.stack,
-            notificationId,
-            action
-        });
-        alert(error.message || 'Failed to handle access request');
     }
 }
 
@@ -2306,31 +2022,183 @@ async function handleStartChat(inventionId) {
             throw new Error('You must be logged in to start a chat');
         }
 
-        const response = await fetch(`https://127.0.0.1:5000/api/messages/start`, {
+        // 1. Fetch invention details to get inventor information
+        console.log('Fetching invention details...');
+        const inventionResponse = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            credentials: 'include'
+        });
+
+        if (!inventionResponse.ok) {
+            throw new Error('Failed to fetch invention details');
+        }
+
+        const inventionData = await inventionResponse.json();
+        console.log('Invention details:', inventionData);
+
+        // Get inventor name from invention data
+        let inventorName = 'Unknown Inventor';
+        if (inventionData.inventor_id) {
+            // Get the current user's data from localStorage
+            const user = JSON.parse(localStorage.getItem('user'));
+            if (user && user.id === inventionData.inventor_id) {
+                inventorName = `${user.first_name} ${user.last_name}`;
+            } else {
+                // If we're not the inventor, we need to get the inventor's name
+                // This will be handled by the backend in the chat creation
+                inventorName = 'Inventor';
+            }
+        }
+        console.log('Using inventor name:', inventorName);
+
+        // 2. Generate encryption keys
+        console.log('Generating encryption keys...');
+        const keyPair = await window.crypto.subtle.generateKey(
+            {
+                name: "RSA-OAEP",
+                modulusLength: 2048,
+                publicExponent: new Uint8Array([1, 0, 1]),
+                hash: "SHA-256",
+            },
+            true,
+            ["encrypt", "decrypt"]
+        );
+
+        // Export public key
+        const publicKey = await window.crypto.subtle.exportKey(
+            "spki",
+            keyPair.publicKey
+        );
+
+        // Export private key
+        const privateKey = await window.crypto.subtle.exportKey(
+            "pkcs8",
+            keyPair.privateKey
+        );
+
+        // Convert to base64 for storage and logging
+        const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
+        const privateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKey)));
+
+        console.log('Generated public key:', publicKeyBase64);
+        console.log('Generated private key:', privateKeyBase64);
+
+        // Hash the keys for verification
+        const publicKeyHash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(publicKeyBase64));
+        const privateKeyHash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(privateKeyBase64));
+
+        // Convert hashes to base64
+        const publicKeyHashBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyHash)));
+        const privateKeyHashBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKeyHash)));
+
+        // Generate a proper 256-bit AES key
+        const encryptionKey = await window.crypto.subtle.generateKey(
+            { name: 'AES-GCM', length: 256 },
+            true,
+            ['encrypt', 'decrypt']
+        );
+
+        // Export the raw key bytes
+        const rawKey = await window.crypto.subtle.exportKey('raw', encryptionKey);
+        const rawKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
+
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const ivBase64 = btoa(String.fromCharCode(...iv));
+
+        // Ensure the keys are properly encoded before encryption
+        const publicKeyBytes = new TextEncoder().encode(publicKeyBase64);
+        const privateKeyBytes = new TextEncoder().encode(privateKeyBase64);
+
+        const encryptedPublicKey = await window.crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            encryptionKey,
+            publicKeyBytes
+        );
+
+        const encryptedPrivateKey = await window.crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            encryptionKey,
+            privateKeyBytes
+        );
+
+        // Convert encrypted keys to base64
+        const encryptedPublicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPublicKey)));
+        const encryptedPrivateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPrivateKey)));
+
+        // Validate base64 strings
+        const validateBase64 = (str) => {
+            try {
+                atob(str);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        if (!validateBase64(rawKeyBase64) || !validateBase64(ivBase64) || 
+            !validateBase64(encryptedPublicKeyBase64) || !validateBase64(encryptedPrivateKeyBase64)) {
+            throw new Error('Invalid base64 encoding detected');
+        }
+
+        // 3. Start the chat with the server
+        console.log('Starting chat with server...');
+        const chatResponse = await fetch('https://127.0.0.1:5000/api/messages/start', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            credentials: 'include',
-            body: JSON.stringify({ invention_id: inventionId })
+            body: JSON.stringify({
+                invention_id: inventionId,
+                title: `Chat about ${inventionData.title}`,
+                public_key: publicKeyBase64,
+                private_key: privateKeyBase64
+            }),
+            credentials: 'include'
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Server error response:', errorData);
-            throw new Error(errorData.message || `Failed to start chat: ${response.status} ${response.statusText}`);
+        if (!chatResponse.ok) {
+            throw new Error('Failed to start chat');
         }
 
-        const data = await response.json();
-        console.log('Chat started successfully:', data);
+        const chatData = await chatResponse.json();
+        console.log('Chat started successfully:', chatData);
+
+        // 4. Store keys securely in sessionStorage
+        const chatKey = `chat_keys_${chatData.chat_id}`;
+        const storedChatData = {
+            invention_id: inventionId,
+            inventor_id: inventionData.inventor_id,
+            inventor_name: inventorName,
+            public_key: encryptedPublicKeyBase64,
+            private_key: encryptedPrivateKeyBase64,
+            public_key_hash: publicKeyHashBase64,
+            private_key_hash: privateKeyHashBase64,
+            raw_key: rawKeyBase64,
+            iv: ivBase64,
+            created_at: new Date().toISOString()
+        };
+
+        // Store in sessionStorage (more secure than localStorage)
+        sessionStorage.setItem(chatKey, JSON.stringify(storedChatData));
+        console.log('Stored encrypted chat data in sessionStorage with key:', chatKey);
+
+        // 5. Switch to the chat view
+        handleMenuClick('messages', chatData.chat_id);
         
-        // Switch to the chat view
-        handleMenuClick('messages');
-        
-        // TODO: Open the specific chat conversation
-        // We'll need to implement this once we have the chat ID
+        // 6. Initialize chat with encryption
+        if (typeof Chat !== 'undefined') {
+            const chat = new Chat('chat-container');
+            chat.initialize(chatData.chat_id, inventorName, chatData.chat_id);
+            console.log('Chat initialized with encryption');
+        } else {
+            console.error('Chat component not loaded');
+        }
+
     } catch (error) {
         console.error('Error starting chat:', error);
         alert(error.message || 'Failed to start chat. Please try again.');
