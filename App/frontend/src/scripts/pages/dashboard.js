@@ -378,7 +378,7 @@ async function createIdeaSubmissionForm() {
 
 // Function to handle idea submission
 async function handleIdeaSubmission(e) {
-    e.preventDefault();
+        e.preventDefault();
     console.log('Starting idea submission...');
 
     const form = e.target;
@@ -465,7 +465,7 @@ async function handleIdeaSubmission(e) {
                 
                 // Clear user data and redirect to login
                 localStorage.removeItem('token');
-                localStorage.removeItem('user');
+        localStorage.removeItem('user');
                 alert('Your session has expired. Please log in again.');
                 window.location.href = '../landing/index.html';
                 return;
@@ -536,9 +536,9 @@ async function fetchAvailableProjects() {
         if (!response.ok) {
             if (response.status === 401) {
                 console.error('Authentication failed - redirecting to login');
-                localStorage.removeItem('token');
+        localStorage.removeItem('token');
                 localStorage.removeItem('user');
-                window.location.href = '../landing/index.html';
+        window.location.href = '../landing/index.html';
                 return;
             }
             const errorData = await response.json();
@@ -1210,6 +1210,110 @@ async function handleMenuClick(menuId) {
     if (menuId === 'home') {
         // Load default dashboard content
         loadDashboardContent(user.role);
+    } else if (menuId === 'messages') {
+        // Handle messages for both roles
+        try {
+            contentDiv.innerHTML = `
+                <div class="welcome-section">
+                    <h1>Welcome, ${user.first_name}!</h1>
+                    <h2>${roleConfigs[user.role].title}</h2>
+                </div>
+                <div class="dashboard-sections">
+                    <div class="container">
+                        <h2>Messages</h2>
+                        <div class="messages-container">
+                            <div class="messages-sidebar">
+                                <div class="messages-list" id="messages-list">
+                                    <div class="loading">Loading messages...</div>
+                                </div>
+                            </div>
+                            <div class="messages-main">
+                                <div class="chat-container" id="chat-container">
+                                    <div class="chat-messages">
+                                        <!-- Messages will be displayed here -->
+                                    </div>
+                                    <div class="chat-input">
+                                        <!-- Input area will be added later -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to view messages');
+            }
+
+            console.log('Fetching messages with token:', token.substring(0, 20) + '...');
+            
+            const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Error response:', errorData);
+                throw new Error(errorData.message || 'Failed to fetch messages');
+            }
+
+            const data = await response.json();
+            console.log('Received messages:', data);
+            const messagesList = document.getElementById('messages-list');
+            
+            if (data.chats && data.chats.length > 0) {
+                messagesList.innerHTML = data.chats.map(chat => `
+                    <div class="chat-item" data-chat-id="${chat.id}">
+                        <h4>${chat.title}</h4>
+                        <p>${chat.other_user_name} (${chat.other_user_role})</p>
+                        <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
+                    </div>
+                `).join('');
+
+                // Add click handlers to chat items
+                document.querySelectorAll('.chat-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const chatId = item.dataset.chatId;
+                        // TODO: Load chat messages
+                    });
+                });
+            } else {
+                messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
+            }
+
+            // Check if Chat is available
+            if (typeof Chat === 'undefined') {
+                console.error('Chat class not found');
+                throw new Error('Chat component not loaded');
+            }
+
+            // Initialize the chat component
+            const chat = new Chat('chat-container');
+            chat.initialize('', '', '');
+
+        } catch (error) {
+            console.error('Error:', error);
+            contentDiv.innerHTML = `
+                <div class="welcome-section">
+                    <h1>Welcome, ${user.first_name}!</h1>
+                    <h2>${roleConfigs[user.role].title}</h2>
+                </div>
+                <div class="dashboard-sections">
+                    <div class="container">
+                        <h2>Messages</h2>
+                        <div class="error-message">
+                            Failed to load messages: ${error.message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     } else if (user.role === 'investor') {
         switch (menuId) {
             case 'availableProjects':
@@ -1751,15 +1855,12 @@ async function handleMenuClick(menuId) {
 
                     console.log('Fetching messages with token:', token.substring(0, 20) + '...');
                     
-                    const response = await fetch('https://127.0.0.1:5000/api/message/messages', {
-                        method: 'GET',
+                    const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
                         headers: {
                             'Authorization': `Bearer ${token}`,
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
+                            'Accept': 'application/json'
                         },
-                        credentials: 'include',
-                        rejectUnauthorized: false
+                        credentials: 'include'
                     });
 
                     if (!response.ok) {
@@ -2154,7 +2255,7 @@ async function handleAccessRequestResponse(notificationId, action) {
 }
 
 // Initialize dashboard
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Check if user is logged in and token is valid
     const token = localStorage.getItem('token');
     if (!token || !checkTokenExpiration()) {
@@ -2163,6 +2264,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = '../landing/index.html';
         return;
     }
+
+    // Load the Chat component first
+    await loadChatComponent();
 
     // Get user role and load appropriate content
     const user = JSON.parse(localStorage.getItem('user'));
@@ -2191,15 +2295,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
     }
-}); 
+});
 
 // Function to handle starting a chat
 async function handleStartChat(inventionId) {
     try {
-        const response = await fetch(`https://127.0.0.1:5000/api/chats/start`, {
+        console.log('Starting chat for invention:', inventionId);
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('You must be logged in to start a chat');
+        }
+
+        const response = await fetch(`https://127.0.0.1:5000/api/messages/start`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
@@ -2209,15 +2319,117 @@ async function handleStartChat(inventionId) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to start chat');
+            console.error('Server error response:', errorData);
+            throw new Error(errorData.message || `Failed to start chat: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
+        console.log('Chat started successfully:', data);
+        
         // Switch to the chat view
         handleMenuClick('messages');
+        
         // TODO: Open the specific chat conversation
+        // We'll need to implement this once we have the chat ID
     } catch (error) {
         console.error('Error starting chat:', error);
         alert(error.message || 'Failed to start chat. Please try again.');
     }
 }
+
+async function loadMessagesContent() {
+    const contentContainer = document.getElementById('dashboard-content');
+    if (!contentContainer) return;
+
+    try {
+        // First, create the UI structure
+        contentContainer.innerHTML = `
+            <div class="messages-container">
+                <div class="messages-sidebar">
+                    <div class="messages-list" id="messages-list">
+                        <div class="loading">Loading messages...</div>
+                    </div>
+                </div>
+                <div class="messages-main">
+                    <div class="chat-container" id="chat-container">
+                        <div class="chat-messages">
+                            <!-- Messages will be displayed here -->
+                        </div>
+                        <div class="chat-input">
+                            <!-- Input area will be added later -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Fetch existing chats
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('You must be logged in to view messages');
+        }
+
+        const response = await fetch('https://127.0.0.1:5000/api/chats', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch chats');
+        }
+
+        const data = await response.json();
+        const messagesList = document.getElementById('messages-list');
+        
+        if (data.chats && data.chats.length > 0) {
+            messagesList.innerHTML = data.chats.map(chat => `
+                <div class="chat-item" data-chat-id="${chat.id}">
+                    <h4>${chat.title}</h4>
+                    <p>${chat.other_user_name} (${chat.other_user_role})</p>
+                    <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
+                </div>
+            `).join('');
+
+            // Add click handlers to chat items
+            document.querySelectorAll('.chat-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const chatId = item.dataset.chatId;
+                    // TODO: Load chat messages
+                });
+            });
+        } else {
+            messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
+        }
+
+        // Initialize the chat component
+        const chat = new Chat('chat-container');
+        chat.initialize('', '', '');
+
+    } catch (error) {
+        console.error('Error loading messages:', error);
+        contentContainer.innerHTML = `
+            <div class="error-message">
+                Failed to load messages: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Add this function to load the Chat component dynamically
+async function loadChatComponent() {
+    try {
+        const response = await fetch('../components/chat.js');
+        const text = await response.text();
+        const script = document.createElement('script');
+        script.textContent = text;
+        document.head.appendChild(script);
+    } catch (error) {
+        console.error('Error loading chat component:', error);
+    }
+}
+
+// Remove the standalone await call
+// await loadChatComponent();

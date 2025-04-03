@@ -9,7 +9,9 @@ from routes.auth_routes import auth_bp
 from routes.invention_routes import invention_bp
 from routes.file_routes import file_bp
 from routes.notification_routes import notification_bp
+from routes.message_routes import message_bp
 from database import db
+from models import User, Invention, Document, AccessRequest, Notification, Chat, Message, ChatParticipant, ChatKey
 
 # Load environment variables
 load_dotenv()
@@ -99,6 +101,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(invention_bp, url_prefix='/api/inventions')
 app.register_blueprint(file_bp, url_prefix='/api/files')
 app.register_blueprint(notification_bp, url_prefix='/api/notification')
+app.register_blueprint(message_bp, url_prefix='/api/messages')
 
 # Create database tables
 with app.app_context():
