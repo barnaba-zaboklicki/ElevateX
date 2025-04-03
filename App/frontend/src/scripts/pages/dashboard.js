@@ -2421,13 +2421,25 @@ async function loadMessagesContent() {
 // Add this function to load the Chat component dynamically
 async function loadChatComponent() {
     try {
-        const response = await fetch('../components/chat.js');
+        // Check if Chat is already defined
+        if (typeof Chat !== 'undefined') {
+            console.log('Chat component already loaded');
+            return true;
+        }
+
+        const response = await fetch('/src/scripts/components/chat.js');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const text = await response.text();
         const script = document.createElement('script');
+        script.type = 'text/javascript';
         script.textContent = text;
         document.head.appendChild(script);
+        return true;
     } catch (error) {
         console.error('Error loading chat component:', error);
+        return false;
     }
 }
 
