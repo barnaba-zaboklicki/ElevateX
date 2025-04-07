@@ -9,6 +9,8 @@ class Chat {
         this.publicKey = null;
         this.privateKey = null;
         this.iv = null;
+        this.pollingInterval = null;
+        this.lastMessageId = null;
     }
 
     async initialize(inventionId, inventorName, chatId) {
@@ -59,55 +61,96 @@ class Chat {
             const iv = Uint8Array.from(atob(chatData.iv), c => c.charCodeAt(0));
             this.iv = iv;
 
-            // Decrypt the keys
-            const encryptedPublicKey = Uint8Array.from(atob(chatData.public_key), c => c.charCodeAt(0));
-            const encryptedPrivateKey = Uint8Array.from(atob(chatData.private_key), c => c.charCodeAt(0));
+            // Store the keys
+            this.publicKey = chatData.public_key;
+            this.privateKey = chatData.private_key;
 
-            // Decrypt the keys
-            const decryptedPublicKey = await window.crypto.subtle.decrypt(
-                { name: 'AES-GCM', iv: iv },
-                encryptionKey,
-                encryptedPublicKey
-            );
-
-            const decryptedPrivateKey = await window.crypto.subtle.decrypt(
-                { name: 'AES-GCM', iv: iv },
-                encryptionKey,
-                encryptedPrivateKey
-            );
-
-            // Convert decrypted keys to base64 strings
-            const publicKeyStr = String.fromCharCode(...new Uint8Array(decryptedPublicKey));
-            const privateKeyStr = String.fromCharCode(...new Uint8Array(decryptedPrivateKey));
-
-            // Import the RSA keys
-            this.publicKey = await window.crypto.subtle.importKey(
-                'spki',
-                Uint8Array.from(atob(publicKeyStr), c => c.charCodeAt(0)),
-                { name: 'RSA-OAEP', hash: 'SHA-256' },
-                true,
-                ['encrypt']
-            );
-
-            this.privateKey = await window.crypto.subtle.importKey(
-                'pkcs8',
-                Uint8Array.from(atob(privateKeyStr), c => c.charCodeAt(0)),
-                { name: 'RSA-OAEP', hash: 'SHA-256' },
-                true,
-                ['decrypt']
-            );
-            
             console.log('Keys imported successfully');
+            
+            // Load initial messages
+            await this.loadMessages();
+            
+            // Start polling for new messages
+            this.startPolling();
+            
+            // Render the chat interface
+            this.render();
         } catch (error) {
-            console.error('Error decrypting keys:', error);
-            this.showError('Failed to initialize encryption. Please try again.');
-            return;
+            console.error('Error initializing chat:', error);
+            this.showError('Failed to initialize chat encryption');
         }
-        
-        this.render();
-        if (chatId) {
-            this.loadMessages();
+    }
+
+    startPolling() {
+        // Poll every 5 seconds
+        this.pollingInterval = setInterval(() => {
+            this.checkNewMessages();
+        }, 5000);
+    }
+
+    stopPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
         }
+    }
+
+    async checkNewMessages() {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to view messages');
+            }
+
+            const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to check new messages');
+            }
+
+            const data = await response.json();
+            
+            // Check if there are new messages
+            if (data.messages.length > this.messages.length) {
+                const newMessages = data.messages.slice(this.messages.length);
+                this.messages = data.messages;
+                this.renderNewMessages(newMessages);
+            }
+        } catch (error) {
+            console.error('Error checking new messages:', error);
+        }
+    }
+
+    renderNewMessages(newMessages) {
+        const messagesContainer = this.container.querySelector('.chat-messages');
+        if (!messagesContainer) return;
+
+        // Add new messages to the container
+        newMessages.forEach(message => {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${message.is_sender ? 'sent' : 'received'}`;
+            messageElement.innerHTML = `
+                <div class="message-content">
+                    <p>${message.content}</p>
+                    <small>${new Date(message.created_at).toLocaleString()}</small>
+                </div>
+            `;
+            messagesContainer.appendChild(messageElement);
+        });
+
+        // Scroll to the bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    // Clean up when leaving the chat
+    cleanup() {
+        this.stopPolling();
     }
 
     async loadMessages() {
