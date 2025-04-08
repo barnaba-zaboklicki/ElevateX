@@ -76,32 +76,13 @@ class Chat {
                 );
 
                 console.log('Private key decrypted successfully');
-
-                // Log the decrypted key length
                 console.log('Decrypted private key length:', decryptedPrivateKey.byteLength);
 
                 try {
-                    // Convert decrypted key to string to check format
-                    const keyString = new TextDecoder().decode(decryptedPrivateKey);
-                    console.log('Key format check:', keyString.substring(0, 50));
-
-                    let keyData;
-                    
-                    // The key is in base64 PKCS#8 format
-                    try {
-                        // Convert base64 string to binary
-                        keyData = Uint8Array.from(atob(keyString), c => c.charCodeAt(0));
-                        console.log('Converted base64 to binary, new length:', keyData.byteLength);
-                    } catch (e) {
-                        console.error('Error converting base64:', e);
-                        // If base64 conversion fails, try using the decrypted key directly
-                        keyData = new Uint8Array(decryptedPrivateKey);
-                    }
-
-                    // Import the private key
+                    // Import the private key directly from the decrypted binary data
                     this.privateKey = await window.crypto.subtle.importKey(
                         'pkcs8',
-                        keyData.buffer,
+                        decryptedPrivateKey,
                         {
                             name: 'RSA-OAEP',
                             hash: 'SHA-256'
@@ -122,22 +103,21 @@ class Chat {
                             .join(' ')
                     );
                     
-                    // If we can decode it as text, show the start of the key
-                    try {
-                        const keyText = new TextDecoder().decode(decryptedPrivateKey);
-                        console.log('Key as text (first 100 chars):', keyText.substring(0, 100));
-                    } catch (e) {
-                        console.log('Key could not be decoded as text');
-                    }
-                    
                     throw new Error(`Failed to import private key: ${importError.message}`);
                 }
 
+                // After successful key processing
+                console.log('Chat initialized successfully');
+                
+                // Render the chat interface
+                this.render();
+                
+                // Set up event listeners
+                this.setupEventListeners();
+                
                 // Load messages and start polling
                 await this.loadMessages();
                 this.startPolling();
-                
-                console.log('Chat initialized successfully');
             } catch (e) {
                 console.error('Error processing encryption keys:', e);
                 throw new Error(`Failed to process encryption keys: ${e.message}`);
@@ -432,29 +412,50 @@ class Chat {
 
         this.container.innerHTML = `
             <div class="chat-container">
-                <div class="chat-messages">
-                    ${this.messages.length > 0 ? this.renderMessages() : '<div class="no-messages">No messages yet</div>'}
-                </div>
+                <div class="chat-messages"></div>
                 <div class="chat-input">
                     <textarea placeholder="Type your message..." rows="3"></textarea>
                     <button class="send-button">Send</button>
                 </div>
             </div>
         `;
+    }
 
-        // Add event listeners
-        const sendButton = this.container.querySelector('.send-button');
+    setupEventListeners() {
         const textarea = this.container.querySelector('textarea');
-        
-        if (sendButton && textarea) {
-            sendButton.addEventListener('click', () => this.sendMessage(textarea.value));
-            textarea.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.sendMessage(textarea.value);
-                }
-            });
+        const sendButton = this.container.querySelector('.send-button');
+
+        if (!textarea || !sendButton) {
+            console.error('Chat input elements not found');
+            return;
         }
+
+        // Send message when clicking the send button
+        sendButton.addEventListener('click', () => {
+            const content = textarea.value.trim();
+            if (content) {
+                this.sendMessage(content);
+                textarea.value = '';
+            }
+        });
+
+        // Send message when pressing Enter (but allow Shift+Enter for new lines)
+        textarea.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                const content = textarea.value.trim();
+                if (content) {
+                    this.sendMessage(content);
+                    textarea.value = '';
+                }
+            }
+        });
+
+        // Auto-resize textarea
+        textarea.addEventListener('input', () => {
+            textarea.style.height = 'auto';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        });
     }
 
     showError(message) {
