@@ -197,7 +197,7 @@ def start_chat():
             'error': str(e)
         }), 500
 
-@message_bp.route('/<int:chat_id>', methods=['GET'])
+@message_bp.route('/<int:chat_id>/messages', methods=['GET'])
 @jwt_required()
 def get_chat_messages(chat_id):
     """Get all messages for a specific chat."""
@@ -230,15 +230,6 @@ def get_chat_messages(chat_id):
         if not other_user:
             return jsonify({'message': 'User not found'}), 404
             
-        # Get the other user's public key from ChatKey
-        other_user_key = ChatKey.query.filter_by(
-            chat_id=chat_id,
-            user_id=other_participant.user_id
-        ).first()
-        
-        if not other_user_key:
-            return jsonify({'message': 'Chat key not found'}), 404
-        
         # Get messages for this chat
         messages = Message.query.filter_by(chat_id=chat_id).order_by(Message.created_at).all()
         
@@ -267,11 +258,6 @@ def get_chat_messages(chat_id):
         return jsonify({
             'chat_id': chat_id,
             'invention_id': invention_id,
-            'other_user': {
-                'id': other_user.id,
-                'name': f"{other_user.first_name} {other_user.last_name}",
-                'public_key': other_user_key.identity_public_key
-            },
             'messages': formatted_messages
         }), 200
     except Exception as e:

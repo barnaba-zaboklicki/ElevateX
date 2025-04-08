@@ -6,9 +6,15 @@ class Chat {
         this.inventionTitle = '';
         this.chatId = '';
         this.messages = [];
-        this.publicKey = null;
-        this.privateKey = null;
-        this.otherUserPublicKey = null;
+        
+        // Signal Protocol state
+        this.registrationId = null;
+        this.identityKeyPair = null;
+        this.signingKeyPair = null;  // New: separate key pair for signing
+        this.signedPreKeyPair = null;
+        this.oneTimePreKeys = [];
+        this.sessions = new Map();
+        
         this.pollingInterval = null;
         this.lastMessageId = null;
     }
@@ -18,33 +24,14 @@ class Chat {
         this.inventionTitle = inventionId;
         this.chatId = chatId;
         
-        // Get encryption keys from sessionStorage
-        const chatKey = `chat_keys_${chatId}`;
-        const chatData = JSON.parse(sessionStorage.getItem(chatKey));
-        
-        if (!chatData) {
-            console.error('No chat data found for key:', chatKey);
-            this.showError('Chat data not found. Please try starting the chat again.');
-            return;
-        }
-
         try {
-            console.log('Found chat data:', chatData);
+            // Initialize Signal Protocol
+            await this.initializeSignalProtocol();
             
-            // Import the keys for decryption
-            const privateKeyBytes = await this.decryptStoredKey(chatData.private_key, chatData.raw_key, chatData.iv);
-            this.privateKey = await window.crypto.subtle.importKey(
-                'pkcs8',
-                privateKeyBytes,
-                {
-                    name: 'RSA-OAEP',
-                    hash: 'SHA-256'
-                },
-                true,
-                ['decrypt']
-            );
-
-            // Load messages and other user's public key
+            // Render the chat interface first
+            this.render();
+            
+            // Load messages
             await this.loadMessages();
             
             // Start polling for new messages
@@ -57,178 +44,238 @@ class Chat {
         }
     }
 
-    async decryptStoredKey(encryptedKeyBase64, rawKeyBase64, ivBase64) {
-        // Decode the base64 strings
-        const encryptedKey = Uint8Array.from(atob(encryptedKeyBase64), c => c.charCodeAt(0));
-        const rawKey = Uint8Array.from(atob(rawKeyBase64), c => c.charCodeAt(0));
-        const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+    async initializeSignalProtocol() {
+        // Generate or load registration ID
+        this.registrationId = parseInt(localStorage.getItem(`signal_reg_id_${this.chatId}`)) || 
+            Math.floor(Math.random() * 16384);
+        localStorage.setItem(`signal_reg_id_${this.chatId}`, this.registrationId.toString());
 
-        // Import the raw AES key
-        const aesKey = await window.crypto.subtle.importKey(
-            'raw',
-            rawKey,
-            { name: 'AES-GCM', length: 256 },
-            false,
-            ['decrypt']
-        );
+        // Generate or load identity key pair for ECDH
+        const storedIdentityKey = localStorage.getItem(`signal_identity_key_${this.chatId}`);
+        if (storedIdentityKey) {
+            this.identityKeyPair = await this.importKeyPair(JSON.parse(storedIdentityKey), 'ECDH');
+        } else {
+            this.identityKeyPair = await this.generateKeyPair('ECDH');
+            localStorage.setItem(`signal_identity_key_${this.chatId}`, 
+                JSON.stringify(await this.exportKeyPair(this.identityKeyPair)));
+        }
 
-        // Decrypt the key
-        const decryptedKey = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            aesKey,
-            encryptedKey
-        );
+        // Generate or load signing key pair
+        const storedSigningKey = localStorage.getItem(`signal_signing_key_${this.chatId}`);
+        if (storedSigningKey) {
+            this.signingKeyPair = await this.importKeyPair(JSON.parse(storedSigningKey), 'ECDSA');
+        } else {
+            this.signingKeyPair = await this.generateKeyPair('ECDSA');
+            localStorage.setItem(`signal_signing_key_${this.chatId}`, 
+                JSON.stringify(await this.exportKeyPair(this.signingKeyPair)));
+        }
 
-        return decryptedKey;
+        // Generate signed pre-key
+        this.signedPreKeyPair = await this.generateKeyPair('ECDH');
+        const signature = await this.signPreKey(this.signedPreKeyPair.publicKey);
+
+        // Generate one-time pre-keys
+        this.oneTimePreKeys = [];
+        for (let i = 0; i < 20; i++) {
+            this.oneTimePreKeys.push(await this.generateKeyPair('ECDH'));
+        }
+
+        // Upload key bundle to server
+        await this.uploadKeyBundle();
     }
 
-    async decryptMessage(encryptedContent, isSender) {
-        try {
-            // If this is a message we sent, we can't decrypt it (it was encrypted with the recipient's public key)
-            if (isSender) {
-                return '[Message sent - encrypted with recipient\'s key]';
-            }
+    async generateKeyPair(algorithm) {
+        const params = algorithm === 'ECDH' ? 
+            {
+                name: 'ECDH',
+                namedCurve: 'P-256'
+            } : 
+            {
+                name: 'ECDSA',
+                namedCurve: 'P-256'
+            };
 
-            if (!this.privateKey) {
-                throw new Error('Private key not available for decryption');
-            }
+        const usages = algorithm === 'ECDH' ? 
+            ['deriveKey', 'deriveBits'] : 
+            ['sign', 'verify'];
 
-            // Log the private key details before attempting decryption
-            try {
-                const keyInfo = await window.crypto.subtle.exportKey('jwk', this.privateKey);
-                console.log('Private key info before decryption:', {
-                    keyType: keyInfo.kty,
-                    algorithm: keyInfo.alg,
-                    keySize: keyInfo.n ? Math.ceil((keyInfo.n.length * 6) / 8) * 8 : 'unknown',
-                    modulusLength: keyInfo.n ? (keyInfo.n.length * 6) : 'unknown'
-                });
-            } catch (keyError) {
-                console.error('Error getting key info:', keyError);
-            }
+        return await window.crypto.subtle.generateKey(
+            params,
+            true,
+            usages
+        );
+    }
 
-            try {
-                // Try to parse as JSON first (new format)
-                const messageData = JSON.parse(encryptedContent);
-                console.log('Message format:', messageData);
-                
-                if (messageData.encryptedKey && messageData.encryptedData && messageData.iv) {
-                    console.log('Decrypting message in new format');
-                    
-                    const encryptedKeyBytes = Uint8Array.from(atob(messageData.encryptedKey), c => c.charCodeAt(0));
-                    const encryptedDataBytes = Uint8Array.from(atob(messageData.encryptedData), c => c.charCodeAt(0));
-                    const ivBytes = Uint8Array.from(atob(messageData.iv), c => c.charCodeAt(0));
+    async importKeyPair(serializedKeyPair, algorithm) {
+        const publicKeyBuffer = this.base64ToArrayBuffer(serializedKeyPair.publicKey);
+        const privateKeyBuffer = this.base64ToArrayBuffer(serializedKeyPair.privateKey);
 
-                    console.log('Encrypted data lengths:', {
-                        key: encryptedKeyBytes.length,
-                        data: encryptedDataBytes.length,
-                        iv: ivBytes.length
-                    });
+        const params = algorithm === 'ECDH' ? 
+            {
+                name: 'ECDH',
+                namedCurve: 'P-256'
+            } : 
+            {
+                name: 'ECDSA',
+                namedCurve: 'P-256'
+            };
 
-                    // First decrypt the AES key using RSA
-                    const decryptedKeyBytes = await window.crypto.subtle.decrypt(
-                        { 
-                            name: 'RSA-OAEP',
-                            hash: { name: 'SHA-256' }
-                        },
-                        this.privateKey,
-                        encryptedKeyBytes
-                    );
+        const publicKeyUsages = algorithm === 'ECDH' ? [] : ['verify'];
+        const privateKeyUsages = algorithm === 'ECDH' ? ['deriveKey', 'deriveBits'] : ['sign'];
 
-                    console.log('AES key decrypted successfully, length:', decryptedKeyBytes.byteLength);
+        const publicKey = await window.crypto.subtle.importKey(
+            'raw',
+            publicKeyBuffer,
+            params,
+            true,
+            publicKeyUsages
+        );
 
-                    // Import the decrypted AES key
-                    const aesKey = await window.crypto.subtle.importKey(
-                        'raw',
-                        decryptedKeyBytes,
-                        { name: 'AES-GCM', length: 256 },
-                        false,
-                        ['decrypt']
-                    );
+        const privateKey = await window.crypto.subtle.importKey(
+            'pkcs8',
+            privateKeyBuffer,
+            params,
+            true,
+            privateKeyUsages
+        );
 
-                    console.log('AES key imported successfully');
+        return { publicKey, privateKey };
+    }
 
-                    // Use the AES key to decrypt the actual message
-                    const decryptedBytes = await window.crypto.subtle.decrypt(
-                        { name: 'AES-GCM', iv: ivBytes },
-                        aesKey,
-                        encryptedDataBytes
-                    );
+    async signPreKey(preKey) {
+        const preKeyBytes = await window.crypto.subtle.exportKey('raw', preKey);
+        const signature = await window.crypto.subtle.sign(
+            {
+                name: 'ECDSA',
+                hash: { name: 'SHA-256' }
+            },
+            this.signingKeyPair.privateKey,
+            preKeyBytes
+        );
+        return signature;
+    }
 
-                    console.log('Message decrypted successfully, length:', decryptedBytes.byteLength);
+    async establishSession(otherUserId, theirKeyBundle) {
+        // X3DH key agreement
+        const sharedSecret = await this.performX3DH(theirKeyBundle);
+        
+        // Initialize Double Ratchet
+        const session = {
+            rootKey: await this.deriveRootKey(sharedSecret),
+            sendingChain: await this.initializeChain(),
+            receivingChain: await this.initializeChain(),
+            messageKeys: new Map()
+        };
 
-                    // Convert decrypted bytes to text
-                    return new TextDecoder().decode(decryptedBytes);
-                } else {
-                    throw new Error('Invalid message format');
-                }
-            } catch (jsonError) {
-                // If JSON parsing fails or message format is invalid, try the old format
-                console.log('Falling back to old message format');
-                console.log('JSON parse error:', jsonError);
-                
-                try {
-                    // Convert base64 to Uint8Array
-                    const encryptedBytes = Uint8Array.from(atob(encryptedContent), c => c.charCodeAt(0));
-                    console.log('Encrypted bytes length:', encryptedBytes.length);
-                    
-                    // Log the first few bytes for debugging
-                    console.log('First few bytes:', Array.from(encryptedBytes.slice(0, 16))
-                        .map(b => b.toString(16).padStart(2, '0'))
-                        .join(' '));
+        this.sessions.set(otherUserId, session);
+        return session;
+    }
 
-                    // Try to decrypt with RSA-OAEP with explicit hash
-                    const decryptedBytes = await window.crypto.subtle.decrypt(
-                        { 
-                            name: 'RSA-OAEP',
-                            hash: { name: 'SHA-256' }
-                        },
-                        this.privateKey,
-                        encryptedBytes
-                    ).catch(error => {
-                        console.error('RSA decryption failed:', error);
-                        throw error;
-                    });
-                    
-                    console.log('Decrypted bytes length:', decryptedBytes.byteLength);
-                    
-                    // Convert decrypted bytes to text
-                    const decryptedText = new TextDecoder().decode(decryptedBytes);
-                    console.log('Decrypted text length:', decryptedText.length);
-                    
-                    return decryptedText;
-                } catch (decryptError) {
-                    console.error('RSA decryption error:', decryptError);
-                    console.error('Error details:', {
-                        name: decryptError.name,
-                        message: decryptError.message,
-                        stack: decryptError.stack
-                    });
+    async performX3DH(theirKeyBundle) {
+        const dh1 = await this.deriveSharedSecret(
+            this.identityKeyPair.privateKey,
+            theirKeyBundle.identityKey
+        );
+        const dh2 = await this.deriveSharedSecret(
+            this.identityKeyPair.privateKey,
+            theirKeyBundle.signedPreKey
+        );
+        const dh3 = await this.deriveSharedSecret(
+            this.signedPreKeyPair.privateKey,
+            theirKeyBundle.identityKey
+        );
 
-                    // Log key information
-                    try {
-                        const keyInfo = await window.crypto.subtle.exportKey('jwk', this.privateKey);
-                        console.log('Private key info during failed decryption:', {
-                            keyType: keyInfo.kty,
-                            algorithm: keyInfo.alg,
-                            keySize: keyInfo.n ? Math.ceil((keyInfo.n.length * 6) / 8) * 8 : 'unknown',
-                            modulusLength: keyInfo.n ? (keyInfo.n.length * 6) : 'unknown'
-                        });
-                    } catch (keyError) {
-                        console.error('Error getting key info:', keyError);
-                    }
+        // Combine shared secrets using HKDF
+        return await this.hkdf(
+            new Uint8Array([...dh1, ...dh2, ...dh3]),
+            'X3DH'
+        );
+    }
 
-                    throw decryptError;
-                }
-            }
-        } catch (error) {
-            console.error('Error decrypting message:', error);
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
-            return '[Unable to decrypt message]';
+    async deriveSharedSecret(privateKey, publicKey) {
+        return await window.crypto.subtle.deriveBits(
+            {
+                name: 'ECDH',
+                public: publicKey
+            },
+            privateKey,
+            256
+        );
+    }
+
+    async hkdf(input, salt) {
+        const key = await window.crypto.subtle.importKey(
+            'raw',
+            input,
+            { name: 'HKDF' },
+            false,
+            ['deriveBits']
+        );
+
+        return await window.crypto.subtle.deriveBits(
+            {
+                name: 'HKDF',
+                hash: 'SHA-256',
+                salt: new TextEncoder().encode(salt),
+                info: new Uint8Array(0)
+            },
+            key,
+            256
+        );
+    }
+
+    async encryptMessage(content, recipientId) {
+        let session = this.sessions.get(recipientId);
+        if (!session) {
+            const keyBundle = await this.fetchKeyBundle(recipientId);
+            session = await this.establishSession(recipientId, keyBundle);
         }
+
+        // Generate message key
+        const messageKey = await this.deriveMessageKey(session.sendingChain);
+        
+        // Encrypt message content
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encryptedContent = await window.crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            messageKey,
+            new TextEncoder().encode(content)
+        );
+
+        // Update ratchet
+        session.sendingChain = await this.ratchetChain(session.sendingChain);
+
+        return {
+            header: {
+                ephemeralKey: session.sendingChain.publicKey,
+                counter: session.sendingChain.counter,
+                previousCounter: session.sendingChain.previousCounter
+            },
+            iv: iv,
+            ciphertext: encryptedContent
+        };
+    }
+
+    async decryptMessage(encryptedMessage, senderId) {
+        let session = this.sessions.get(senderId);
+        if (!session) {
+            throw new Error('No session established with sender');
+        }
+
+        // Derive message key
+        const messageKey = await this.deriveMessageKey(session.receivingChain);
+
+        // Decrypt message
+        const decryptedContent = await window.crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: encryptedMessage.iv },
+            messageKey,
+            encryptedMessage.ciphertext
+        );
+
+        // Update ratchet
+        session.receivingChain = await this.ratchetChain(session.receivingChain);
+
+        return new TextDecoder().decode(decryptedContent);
     }
 
     async renderMessages() {
@@ -274,77 +321,8 @@ class Chat {
                 throw new Error('You must be logged in to send messages');
             }
 
-            // Get the other user's public key if we don't have it
-            if (!this.otherUserPublicKey) {
-                const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/json'
-                    },
-                    credentials: 'include'
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to get recipient public key');
-                }
-
-                const data = await response.json();
-                const publicKeyBytes = Uint8Array.from(atob(data.other_user.public_key), c => c.charCodeAt(0));
-                this.otherUserPublicKey = await window.crypto.subtle.importKey(
-                    'spki',
-                    publicKeyBytes,
-                    {
-                        name: 'RSA-OAEP',
-                        hash: 'SHA-256'
-                    },
-                    true,
-                    ['encrypt']
-                );
-            }
-
-            // Generate a random AES key for this message
-            const aesKey = await window.crypto.subtle.generateKey(
-                { name: 'AES-GCM', length: 256 },
-                true,
-                ['encrypt']
-            );
-
-            // Generate IV for AES encryption
-            const iv = window.crypto.getRandomValues(new Uint8Array(12));
-
-            // Export the AES key
-            const rawAesKey = await window.crypto.subtle.exportKey('raw', aesKey);
-
-            // Encrypt the AES key with recipient's public key
-            const encryptedAesKey = await window.crypto.subtle.encrypt(
-                { 
-                    name: 'RSA-OAEP',
-                    hash: { name: 'SHA-256' }
-                },
-                this.otherUserPublicKey,
-                rawAesKey
-            );
-
-            // Encrypt the actual message with AES
-            const encoder = new TextEncoder();
-            const encodedContent = encoder.encode(content);
-            const encryptedContent = await window.crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv: iv },
-                aesKey,
-                encodedContent
-            );
-
-            // Convert everything to base64
-            const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedAesKey)));
-            const encryptedDataBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedContent)));
-            const ivBase64 = btoa(String.fromCharCode(...iv));
-
-            // Create the message object
-            const messageObject = {
-                encryptedKey: encryptedKeyBase64,
-                encryptedData: encryptedDataBase64,
-                iv: ivBase64
-            };
+            // Encrypt message using Signal Protocol
+            const encryptedMessage = await this.encryptMessage(content, this.chatId);
 
             // Send the encrypted message to the server
             const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/send`, {
@@ -355,7 +333,7 @@ class Chat {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({ 
-                    encrypted_content: JSON.stringify(messageObject)
+                    encrypted_content: JSON.stringify(encryptedMessage)
                 }),
                 credentials: 'include'
             });
@@ -367,15 +345,13 @@ class Chat {
             const data = await response.json();
             
             if (data.message) {
-                // Add the message to our local list with the encrypted content
                 this.messages.push({
                     ...data.message,
-                    encrypted_content: JSON.stringify(messageObject),
+                    encrypted_content: JSON.stringify(encryptedMessage),
                     is_sender: true
                 });
                 await this.renderMessages();
                 
-                // Clear the input
                 const textarea = this.container.querySelector('textarea');
                 if (textarea) {
                     textarea.value = '';
@@ -410,7 +386,7 @@ class Chat {
                 throw new Error('You must be logged in to view messages');
             }
 
-            const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}`, {
+            const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/messages`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/json'
@@ -423,15 +399,21 @@ class Chat {
             }
 
             const data = await response.json();
+            console.log('Polling received messages:', data);
             
             // Check if there are new messages
-            if (data.messages.length > this.messages.length) {
+            if (data.messages && data.messages.length > this.messages.length) {
                 const newMessages = data.messages.slice(this.messages.length);
-                this.messages = data.messages;
-                this.renderNewMessages(newMessages);
+                this.messages = data.messages.map(msg => ({
+                    ...msg,
+                    decrypted_content: null // Will be decrypted on demand
+                }));
+                await this.renderMessages(); // Use the main render method to handle decryption
             }
         } catch (error) {
             console.error('Error checking new messages:', error);
+            // Don't show error to user for polling failures
+            // this.showError(error.message);
         }
     }
 
@@ -440,17 +422,36 @@ class Chat {
         if (!messagesContainer) return;
 
         // Add new messages to the container
-        newMessages.forEach(message => {
+        for (const message of newMessages) {
             const messageElement = document.createElement('div');
             messageElement.className = `message ${message.is_sender ? 'sent' : 'received'}`;
-            messageElement.innerHTML = `
-                <div class="message-content">
-                    <p>${message.content}</p>
-                    <small>${new Date(message.created_at).toLocaleString()}</small>
-                </div>
-            `;
+            
+            // Create placeholder for decrypted content
+            const contentElement = document.createElement('div');
+            contentElement.className = 'message-content loading';
+            contentElement.innerHTML = '<p>Decrypting message...</p>';
+            messageElement.appendChild(contentElement);
+            
             messagesContainer.appendChild(messageElement);
-        });
+            
+            // Decrypt the message asynchronously
+            this.decryptMessage(message.encrypted_content, message.sender_id)
+                .then(decryptedContent => {
+                    contentElement.className = 'message-content';
+                    contentElement.innerHTML = `
+                        <p>${this.escapeHtml(decryptedContent)}</p>
+                        <small>${new Date(message.created_at).toLocaleString()}</small>
+                    `;
+                })
+                .catch(error => {
+                    contentElement.className = 'message-content error';
+                    contentElement.innerHTML = `
+                        <p>Failed to decrypt message</p>
+                        <small>${new Date(message.created_at).toLocaleString()}</small>
+                    `;
+                    console.error('Error decrypting message:', error);
+                });
+        }
 
         // Scroll to the bottom
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
@@ -459,16 +460,23 @@ class Chat {
     // Clean up when leaving the chat
     cleanup() {
         this.stopPolling();
+        // Clear sensitive key material
+        this.identityKeyPair = null;
+        this.signingKeyPair = null;
+        this.signedPreKeyPair = null;
+        this.oneTimePreKeys = [];
+        this.sessions.clear();
     }
 
     async loadMessages() {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
-                throw new Error('You must be logged in to view messages');
+                throw new Error('You must be logged in to load messages');
             }
 
-            const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}`, {
+            // Get messages for this chat
+            const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/messages`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/json'
@@ -481,11 +489,20 @@ class Chat {
             }
 
             const data = await response.json();
-            this.messages = data.messages;
+            console.log('Received messages:', data);
+
+            // Store messages
+            this.messages = data.messages.map(msg => ({
+                ...msg,
+                decrypted_content: null // Will be decrypted on demand
+            }));
+
+            // Render messages
             await this.renderMessages();
+
         } catch (error) {
             console.error('Error loading messages:', error);
-            this.showError(error.message);
+            throw new Error('Failed to load messages');
         }
     }
 
@@ -497,9 +514,11 @@ class Chat {
 
         this.container.innerHTML = `
             <div class="chat-container">
-                <div class="chat-messages">
-                    ${this.messages.length > 0 ? this.renderMessages() : '<div class="no-messages">No messages yet</div>'}
+                <div class="chat-header">
+                    <h3>${this.escapeHtml(this.inventorName)}</h3>
+                    <p>Invention: ${this.escapeHtml(this.inventionTitle)}</p>
                 </div>
+                <div class="chat-messages"></div>
                 <div class="chat-input">
                     <textarea placeholder="Type your message..." rows="3"></textarea>
                     <button class="send-button">Send</button>
@@ -512,11 +531,20 @@ class Chat {
         const textarea = this.container.querySelector('textarea');
         
         if (sendButton && textarea) {
-            sendButton.addEventListener('click', () => this.sendMessage(textarea.value));
+            sendButton.addEventListener('click', () => {
+                const content = textarea.value.trim();
+                if (content) {
+                    this.sendMessage(content);
+                }
+            });
+            
             textarea.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    this.sendMessage(textarea.value);
+                    const content = textarea.value.trim();
+                    if (content) {
+                        this.sendMessage(content);
+                    }
                 }
             });
         }
@@ -528,5 +556,138 @@ class Chat {
         errorDiv.textContent = message;
         this.container.appendChild(errorDiv);
         setTimeout(() => errorDiv.remove(), 5000);
+    }
+
+    async exportKeyPair(keyPair) {
+        const publicKey = await window.crypto.subtle.exportKey('raw', keyPair.publicKey);
+        const privateKey = await window.crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+        
+        return {
+            publicKey: this.arrayBufferToBase64(publicKey),
+            privateKey: this.arrayBufferToBase64(privateKey)
+        };
+    }
+
+    arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    async uploadKeyBundle() {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to upload keys');
+            }
+
+            // Export public keys for the bundle
+            const identityPublicKey = await window.crypto.subtle.exportKey('raw', this.identityKeyPair.publicKey);
+            const signedPrePublicKey = await window.crypto.subtle.exportKey('raw', this.signedPreKeyPair.publicKey);
+            const signature = await this.signPreKey(this.signedPreKeyPair.publicKey);
+
+            // Export one-time pre-key public keys
+            const oneTimePreKeyPublics = await Promise.all(
+                this.oneTimePreKeys.map(async (keyPair) => {
+                    const publicKey = await window.crypto.subtle.exportKey('raw', keyPair.publicKey);
+                    return this.arrayBufferToBase64(publicKey);
+                })
+            );
+
+            // Prepare the key bundle
+            const keyBundle = {
+                registration_id: this.registrationId,
+                identity_key: this.arrayBufferToBase64(identityPublicKey),
+                signed_pre_key: this.arrayBufferToBase64(signedPrePublicKey),
+                signature: this.arrayBufferToBase64(signature),
+                one_time_pre_keys: oneTimePreKeyPublics
+            };
+
+            // Upload to server
+            const response = await fetch(`https://127.0.0.1:5000/api/keys/${this.chatId}/upload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(keyBundle),
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to upload key bundle');
+            }
+
+            console.log('Key bundle uploaded successfully');
+        } catch (error) {
+            console.error('Error uploading key bundle:', error);
+            throw new Error('Failed to initialize encryption: ' + error.message);
+        }
+    }
+
+    async fetchKeyBundle(userId) {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to fetch keys');
+            }
+
+            const response = await fetch(`https://127.0.0.1:5000/api/keys/${userId}/bundle`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch key bundle');
+            }
+
+            const bundle = await response.json();
+
+            // Convert base64 keys back to CryptoKey objects
+            return {
+                registrationId: bundle.registration_id,
+                identityKey: await window.crypto.subtle.importKey(
+                    'raw',
+                    this.base64ToArrayBuffer(bundle.identity_key),
+                    { name: 'ECDH', namedCurve: 'P-256' },
+                    true,
+                    []
+                ),
+                signedPreKey: await window.crypto.subtle.importKey(
+                    'raw',
+                    this.base64ToArrayBuffer(bundle.signed_pre_key),
+                    { name: 'ECDH', namedCurve: 'P-256' },
+                    true,
+                    []
+                ),
+                signature: this.base64ToArrayBuffer(bundle.signature),
+                oneTimePreKey: bundle.one_time_pre_key ? await window.crypto.subtle.importKey(
+                    'raw',
+                    this.base64ToArrayBuffer(bundle.one_time_pre_key),
+                    { name: 'ECDH', namedCurve: 'P-256' },
+                    true,
+                    []
+                ) : null
+            };
+        } catch (error) {
+            console.error('Error fetching key bundle:', error);
+            throw new Error('Failed to establish secure connection: ' + error.message);
+        }
     }
 } 

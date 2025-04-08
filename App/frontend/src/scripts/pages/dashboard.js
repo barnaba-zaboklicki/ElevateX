@@ -1648,6 +1648,10 @@ async function handleMenuClick(menuId, chatId = null) {
         switch (menuId) {
             case 'addProject':
                 try {
+                    // First load PDF libraries
+                    await loadPDFLibraries();
+                    console.log('PDF libraries loaded successfully');
+
                     contentDiv.innerHTML = `
                         <div class="welcome-section">
                             <h1>Welcome, ${user.first_name}!</h1>
@@ -1656,74 +1660,31 @@ async function handleMenuClick(menuId, chatId = null) {
                         <div class="dashboard-sections">
                             <div class="container">
                                 <h2>Add New Project</h2>
-                                <form id="addProjectForm" class="project-form">
-                                    <div class="form-group">
-                                        <label for="title">Project Title</label>
-                                        <input type="text" id="title" name="title" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="description">Description</label>
-                                        <textarea id="description" name="description" rows="4" required></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="technical_details">Technical Details</label>
-                                        <textarea id="technical_details" name="technical_details" rows="4" required></textarea>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="patent_status">Patent Status</label>
-                                        <select id="patent_status" name="patent_status" required>
-                                            <option value="not_filed">Not Filed</option>
-                                            <option value="pending">Pending</option>
-                                            <option value="granted">Granted</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="funding_status">Funding Status</label>
-                                        <select id="funding_status" name="funding_status" required>
-                                            <option value="not_requested">Not Requested</option>
-                                            <option value="requested">Requested</option>
-                                            <option value="funded">Funded</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="attachments">Attachments</label>
-                                        <input type="file" id="attachments" name="attachments" multiple>
-                                    </div>
-                                    <button type="submit" class="submit-invention-btn">Submit Project</button>
-                                </form>
+                                ${await createIdeaSubmissionForm()}
                             </div>
                         </div>
                     `;
 
                     // Add form submission handler
-                    const form = document.getElementById('addProjectForm');
-                    form.addEventListener('submit', async (e) => {
-                        e.preventDefault();
-                        const formData = new FormData(form);
+                    const form = document.getElementById('ideaSubmissionForm');
+                    if (form) {
+                        form.addEventListener('submit', handleIdeaSubmission);
                         
-                        try {
-                            const response = await fetch('https://127.0.0.1:5000/api/inventions', {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                                },
-                                body: formData,
-                                credentials: 'include',
-                                rejectUnauthorized: false
+                        // Add file input change handler
+                        const fileInput = form.querySelector('#attachments');
+                        if (fileInput) {
+                            fileInput.addEventListener('change', async (e) => {
+                                const files = e.target.files;
+                                const selectedFilesDiv = document.getElementById('selectedFiles');
+                                if (selectedFilesDiv) {
+                                    selectedFilesDiv.innerHTML = Array.from(files)
+                                        .map(file => `<div>${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)</div>`)
+                                        .join('');
+                                }
                             });
-
-                            if (!response.ok) {
-                                throw new Error('Failed to create project');
-                            }
-
-                            const data = await response.json();
-                            alert('Project created successfully!');
-                            handleMenuClick('myInventions'); // Switch to my inventions view
-                        } catch (error) {
-                            console.error('Error:', error);
-                            alert('Failed to create project. Please try again.');
                         }
-                    });
+                    }
+
                 } catch (error) {
                     console.error('Error:', error);
                     contentDiv.innerHTML = `
@@ -1735,7 +1696,7 @@ async function handleMenuClick(menuId, chatId = null) {
                             <div class="container">
                                 <h2>Add New Project</h2>
                                 <div class="error-message">
-                                    Failed to load the form. Please try again later.
+                                    Failed to load the form. Please try again later. Error: ${error.message}
                                 </div>
                             </div>
                         </div>
@@ -1821,6 +1782,23 @@ async function handleMenuClick(menuId, chatId = null) {
                                 e.stopPropagation();
                                 const inventionId = btn.dataset.inventionId;
                                 handleDeleteInvention(inventionId);
+                            });
+                        });
+
+                        // Add click event listeners to submit for review buttons
+                        document.querySelectorAll('.submit-invention-btn').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.stopPropagation();
+                                const inventionId = btn.dataset.inventionId;
+                                try {
+                                    await handleInventionSubmission(inventionId);
+                                    alert('Invention submitted for review successfully!');
+                                    // Refresh the inventions list
+                                    handleMenuClick('myInventions');
+                                } catch (error) {
+                                    console.error('Error submitting invention:', error);
+                                    alert(error.message || 'Failed to submit invention for review. Please try again.');
+                                }
                             });
                         });
                     }
@@ -2272,3 +2250,70 @@ async function loadChatComponent() {
 
 // Remove the standalone await call
 // await loadChatComponent();
+
+// Function to handle delete button click
+function handleDeleteInvention(inventionId) {
+    if (confirm('Are you sure you want to delete this invention? This action cannot be undone.')) {
+        handlePasswordConfirmationModal(inventionId);
+    }
+}
+
+// Function to handle access request response (accept/reject)
+async function handleAccessRequestResponse(notificationId, action) {
+    try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            throw new Error('You must be logged in to respond to access requests');
+        }
+
+        // Get the notification element and its reference_id (which is the access_request_id)
+        const notificationItem = document.querySelector(`.notification-item[data-notification-id="${notificationId}"]`);
+        if (!notificationItem) {
+            throw new Error('Notification not found');
+        }
+        const accessRequestId = notificationItem.dataset.referenceId;
+        if (!accessRequestId) {
+            throw new Error('Access request ID not found');
+        }
+
+        const response = await fetch(`https://127.0.0.1:5000/api/inventions/access-requests/${accessRequestId}/handle`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ action }),
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'An error occurred');
+        }
+
+        // Update the UI to reflect the new status
+        const acceptBtn = notificationItem.querySelector('.accept-request-btn');
+        const rejectBtn = notificationItem.querySelector('.reject-request-btn');
+        const statusText = notificationItem.querySelector('.status-text') || document.createElement('span');
+        statusText.className = 'status-text';
+
+        if (action === 'accept') {
+            acceptBtn.disabled = true;
+            rejectBtn.disabled = false;
+            statusText.style.color = '#28a745';
+            statusText.textContent = 'Access request has been accepted';
+        } else {
+            acceptBtn.disabled = false;
+            rejectBtn.disabled = true;
+            statusText.style.color = '#dc3545';
+            statusText.textContent = 'Access request has been rejected';
+        }
+
+        if (!notificationItem.querySelector('.status-text')) {
+            notificationItem.querySelector('.notification-actions').appendChild(statusText);
+        }
+    } catch (error) {
+        console.error(`Error ${action}ing access request:`, error);
+        alert(error.message || `Failed to ${action} access request. Please try again.`);
+    }
+}
