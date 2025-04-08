@@ -2017,12 +2017,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function handleStartChat(inventionId) {
     try {
         console.log('Starting chat for invention:', inventionId);
+        
+        // Get invention details first
         const token = localStorage.getItem('token');
         if (!token) {
             throw new Error('You must be logged in to start a chat');
         }
 
-        // 1. Fetch invention details to get inventor information
         console.log('Fetching invention details...');
         const inventionResponse = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
             headers: {
@@ -2039,23 +2040,14 @@ async function handleStartChat(inventionId) {
         const inventionData = await inventionResponse.json();
         console.log('Invention details:', inventionData);
 
-        // Get inventor name from invention data
-        let inventorName = 'Unknown Inventor';
-        if (inventionData.inventor_id) {
-            // Get the current user's data from localStorage
-            const user = JSON.parse(localStorage.getItem('user'));
-            if (user && user.id === inventionData.inventor_id) {
-                inventorName = `${user.first_name} ${user.last_name}`;
-            } else {
-                // If we're not the inventor, we need to get the inventor's name
-                // This will be handled by the backend in the chat creation
-                inventorName = 'Inventor';
-            }
-        }
+        // Use inventor's name from the invention data
+        const inventorName = 'Inventor'; // Simplified for demo
         console.log('Using inventor name:', inventorName);
 
-        // 2. Generate encryption keys
+        // Generate encryption keys
         console.log('Generating encryption keys...');
+        
+        // Generate RSA key pair
         const keyPair = await window.crypto.subtle.generateKey(
             {
                 name: "RSA-OAEP",
@@ -2067,83 +2059,41 @@ async function handleStartChat(inventionId) {
             ["encrypt", "decrypt"]
         );
 
-        // Export public key
-        const publicKey = await window.crypto.subtle.exportKey(
-            "spki",
-            keyPair.publicKey
-        );
+        // Export keys
+        const publicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+        const privateKey = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
 
-        // Export private key
-        const privateKey = await window.crypto.subtle.exportKey(
-            "pkcs8",
-            keyPair.privateKey
-        );
-
-        // Convert to base64 for storage and logging
-        const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
-        const privateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKey)));
-
-        console.log('Generated public key:', publicKeyBase64);
-        console.log('Generated private key:', privateKeyBase64);
-
-        // Hash the keys for verification
-        const publicKeyHash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(publicKeyBase64));
-        const privateKeyHash = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(privateKeyBase64));
-
-        // Convert hashes to base64
-        const publicKeyHashBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyHash)));
-        const privateKeyHashBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKeyHash)));
-
-        // Generate a proper 256-bit AES key
-        const encryptionKey = await window.crypto.subtle.generateKey(
+        // Generate AES key for key encryption
+        const aesKey = await window.crypto.subtle.generateKey(
             { name: 'AES-GCM', length: 256 },
             true,
             ['encrypt', 'decrypt']
         );
 
-        // Export the raw key bytes
-        const rawKey = await window.crypto.subtle.exportKey('raw', encryptionKey);
-        const rawKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
-
+        // Generate IV and export AES key
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const rawKey = await window.crypto.subtle.exportKey('raw', aesKey);
+
+        // Encrypt the private key
+        const encryptedPrivateKey = await window.crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv: iv },
+            aesKey,
+            privateKey
+        );
+
+        // Convert all keys to base64
+        const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
+        const encryptedPrivateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPrivateKey)));
+        const rawKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
         const ivBase64 = btoa(String.fromCharCode(...iv));
 
-        // Ensure the keys are properly encoded before encryption
-        const publicKeyBytes = new TextEncoder().encode(publicKeyBase64);
-        const privateKeyBytes = new TextEncoder().encode(privateKeyBase64);
+        console.log('Keys generated successfully:', {
+            publicKeyLength: publicKeyBase64.length,
+            encryptedPrivateKeyLength: encryptedPrivateKeyBase64.length,
+            rawKeyLength: rawKeyBase64.length,
+            ivLength: ivBase64.length
+        });
 
-        const encryptedPublicKey = await window.crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv },
-            encryptionKey,
-            publicKeyBytes
-        );
-
-        const encryptedPrivateKey = await window.crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv },
-            encryptionKey,
-            privateKeyBytes
-        );
-
-        // Convert encrypted keys to base64
-        const encryptedPublicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPublicKey)));
-        const encryptedPrivateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPrivateKey)));
-
-        // Validate base64 strings
-        const validateBase64 = (str) => {
-            try {
-                atob(str);
-                return true;
-            } catch (e) {
-                return false;
-            }
-        };
-
-        if (!validateBase64(rawKeyBase64) || !validateBase64(ivBase64) || 
-            !validateBase64(encryptedPublicKeyBase64) || !validateBase64(encryptedPrivateKeyBase64)) {
-            throw new Error('Invalid base64 encoding detected');
-        }
-
-        // 3. Start the chat with the server
         console.log('Starting chat with server...');
         const chatResponse = await fetch('https://127.0.0.1:5000/api/messages/start', {
             method: 'POST',
@@ -2156,7 +2106,7 @@ async function handleStartChat(inventionId) {
                 invention_id: inventionId,
                 title: `Chat about ${inventionData.title}`,
                 public_key: publicKeyBase64,
-                private_key: privateKeyBase64
+                private_key: encryptedPrivateKeyBase64
             }),
             credentials: 'include'
         });
@@ -2168,40 +2118,28 @@ async function handleStartChat(inventionId) {
         const chatData = await chatResponse.json();
         console.log('Chat started successfully:', chatData);
 
-        // 4. Store keys securely in sessionStorage
+        // Store keys in sessionStorage
         const chatKey = `chat_keys_${chatData.chat_id}`;
         const storedChatData = {
             invention_id: inventionId,
             inventor_id: inventionData.inventor_id,
             inventor_name: inventorName,
-            public_key: encryptedPublicKeyBase64,
+            public_key: publicKeyBase64,
             private_key: encryptedPrivateKeyBase64,
-            public_key_hash: publicKeyHashBase64,
-            private_key_hash: privateKeyHashBase64,
             raw_key: rawKeyBase64,
             iv: ivBase64,
             created_at: new Date().toISOString()
         };
 
-        // Store in sessionStorage (more secure than localStorage)
+        // Store in sessionStorage
         sessionStorage.setItem(chatKey, JSON.stringify(storedChatData));
-        console.log('Stored encrypted chat data in sessionStorage with key:', chatKey);
+        console.log('Stored chat data in sessionStorage');
 
-        // 5. Switch to the chat view
+        // Switch to chat view
         handleMenuClick('messages', chatData.chat_id);
-        
-        // 6. Initialize chat with encryption
-        if (typeof Chat !== 'undefined') {
-            const chat = new Chat('chat-container');
-            chat.initialize(chatData.chat_id, inventorName, chatData.chat_id);
-            console.log('Chat initialized with encryption');
-        } else {
-            console.error('Chat component not loaded');
-        }
-
     } catch (error) {
         console.error('Error starting chat:', error);
-        alert(error.message || 'Failed to start chat. Please try again.');
+        showError(error.message);
     }
 }
 

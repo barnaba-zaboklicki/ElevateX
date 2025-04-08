@@ -340,4 +340,55 @@ def store_encrypted_message(chat_id, message_id, encrypted_content):
         return {
             'success': False,
             'message': str(e)
+        }
+
+def get_message_from_s3(s3_key):
+    """
+    Retrieve an encrypted message from AWS S3.
+    
+    Args:
+        s3_key (str): The S3 key of the message
+        
+    Returns:
+        dict: A dictionary containing success status and message content or error message
+    """
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.getenv('AWS_REGION')
+        )
+        
+        # Get bucket name from environment
+        bucket_name = os.getenv('S3_BUCKET_NAME', 'elevatex-inventions')
+        if not bucket_name:
+            raise ValueError("S3_BUCKET_NAME environment variable is not set")
+        
+        # Get object from S3
+        response = s3_client.get_object(
+            Bucket=bucket_name,
+            Key=s3_key
+        )
+        
+        # Read and encode content
+        encrypted_content = base64.b64encode(response['Body'].read()).decode('utf-8')
+        
+        return {
+            'success': True,
+            'content': encrypted_content
+        }
+        
+    except ClientError as e:
+        print(f"AWS S3 error retrieving message: {str(e)}")
+        return {
+            'success': False,
+            'error': f"AWS S3 error: {str(e)}"
+        }
+    except Exception as e:
+        print(f"Unexpected error retrieving message from S3: {str(e)}")
+        return {
+            'success': False,
+            'error': str(e)
         } 

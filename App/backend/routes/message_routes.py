@@ -239,15 +239,19 @@ def get_chat_messages(chat_id):
         # Get messages for this chat
         messages = Message.query.filter_by(chat_id=chat_id).order_by(Message.created_at).all()
         
-        # Format messages with sender info
+        # Get encrypted content from S3 for each message
         formatted_messages = []
         for msg in messages:
+            # Get encrypted content from S3
+            encrypted_content = get_message_from_s3(msg.s3_key)
+            if not encrypted_content['success']:
+                print(f"Failed to get message {msg.id} from S3: {encrypted_content['error']}")
+                continue
+                
             sender = User.query.get(msg.sender_id)
             formatted_messages.append({
                 'id': msg.id,
-                'content': msg.content,
-                'encrypted_content': msg.encrypted_content,
-                's3_key': msg.s3_key,
+                'encrypted_content': encrypted_content['content'],
                 'sender_id': msg.sender_id,
                 'sender_name': f"{sender.first_name} {sender.last_name}",
                 'created_at': msg.created_at.isoformat(),
@@ -290,42 +294,29 @@ def send_message(chat_id):
             return jsonify({'message': 'Unauthorized'}), 403
         
         data = request.get_json()
-        content = data.get('content')
         encrypted_content = data.get('encrypted_content')
         
-        print(f"Received message - Content: {content}, Encrypted: {encrypted_content[:50]}...")  # Log first 50 chars
+        if not encrypted_content:
+            return jsonify({'message': 'Encrypted content is required'}), 400
         
-        if not content or not encrypted_content:
-            return jsonify({'message': 'Message content and encrypted content are required'}), 400
-        
-        # Create new message
-        new_message = Message(
-            chat_id=chat_id,
-            sender_id=current_user_id,
-            content=content,
-            encrypted_content=encrypted_content,
-            created_at=datetime.now(timezone.utc)
-        )
-        
-        db.session.add(new_message)
-        db.session.flush()  # Get the message ID
-        
-        print(f"Created message with ID: {new_message.id}")  # Log message ID
-        
-        # Store encrypted message in S3
-        print("Attempting to store message in S3...")  # Log S3 attempt
-        s3_result = store_encrypted_message(chat_id, new_message.id, encrypted_content)
-        print(f"S3 result: {s3_result}")  # Log S3 result
+        # First store in S3 to get the key
+        s3_result = store_encrypted_message(chat_id, datetime.now(timezone.utc).timestamp(), encrypted_content)
         
         if not s3_result['success']:
-            db.session.rollback()
             return jsonify({
                 'message': 'Failed to store encrypted message',
                 'error': s3_result['message']
             }), 500
         
-        # Update message with S3 key
-        new_message.s3_key = s3_result['s3_key']
+        # Create new message with S3 key
+        new_message = Message(
+            chat_id=chat_id,
+            sender_id=current_user_id,
+            s3_key=s3_result['s3_key'],
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        db.session.add(new_message)
         db.session.commit()
         
         # Get sender info for response
@@ -334,15 +325,15 @@ def send_message(chat_id):
         return jsonify({
             'message': {
                 'id': new_message.id,
-                'content': content,
                 'sender_id': current_user_id,
                 'sender_name': f"{sender.first_name} {sender.last_name}",
-                'created_at': new_message.created_at.isoformat()
+                'created_at': new_message.created_at.isoformat(),
+                's3_key': new_message.s3_key
             }
         }), 201
     except Exception as e:
         db.session.rollback()
-        print(f"Error in send_message: {str(e)}")  # Log the full error
+        print(f"Error in send_message: {str(e)}")
         return jsonify({
             'message': 'Failed to send message',
             'error': str(e)
