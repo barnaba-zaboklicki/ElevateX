@@ -615,6 +615,8 @@ class Chat {
                 one_time_pre_keys: oneTimePreKeyPublics
             };
 
+            console.log('Uploading key bundle for chat:', this.chatId);
+
             // Upload to server
             const response = await fetch(`https://127.0.0.1:5000/api/keys/${this.chatId}/upload`, {
                 method: 'POST',
@@ -628,10 +630,13 @@ class Chat {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to upload key bundle');
+                const errorData = await response.json();
+                console.error('Key bundle upload failed:', errorData);
+                throw new Error(errorData.message || 'Failed to upload key bundle');
             }
 
             console.log('Key bundle uploaded successfully');
+            return await response.json();
         } catch (error) {
             console.error('Error uploading key bundle:', error);
             throw new Error('Failed to initialize encryption: ' + error.message);

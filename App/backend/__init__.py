@@ -6,6 +6,8 @@ from routes.auth_routes import auth_bp
 from routes.invention_routes import invention_bp
 from routes.user_routes import user_bp
 from routes.notification_routes import notification_bp
+from routes.message_routes import message_bp
+from routes.key_routes import key_bp
 import os
 
 def create_app():
@@ -27,5 +29,7 @@ def create_app():
     app.register_blueprint(invention_bp, url_prefix='/api/inventions')
     app.register_blueprint(user_bp, url_prefix='/api/users')
     app.register_blueprint(notification_bp, url_prefix='/api/notification')
+    app.register_blueprint(message_bp, url_prefix='/api/messages')
+    app.register_blueprint(key_bp, url_prefix='/api/keys')
     
     return app 

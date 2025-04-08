@@ -78,113 +78,63 @@ def start_chat():
     current_user_id = int(get_jwt_identity())
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'message': 'No data provided'}), 400
+
         invention_id = data.get('invention_id')
-        title = data.get('title')
-        identity_public_key = data.get('public_key')  # Frontend still sends as public_key
-        signed_pre_public_key = data.get('private_key')  # Frontend still sends as private_key
-        
-        print(f"Starting chat for invention {invention_id} by user {current_user_id}")
-        
         if not invention_id:
-            print("Error: Missing invention_id")
             return jsonify({'message': 'Invention ID is required'}), 400
-        
+
         # Get the invention
         invention = Invention.query.get(invention_id)
         if not invention:
-            print(f"Error: Invention {invention_id} not found")
             return jsonify({'message': 'Invention not found'}), 404
-        
-        # Check if user is the inventor or has accepted access
-        current_user = User.query.get(current_user_id)
-        if current_user.role == 'investor':
-            # Check if investor has accepted access
+
+        # Check if user is either the inventor or has an accepted access request
+        if current_user_id != invention.inventor_id:
             access_request = AccessRequest.query.filter_by(
                 invention_id=invention_id,
                 investor_id=current_user_id,
                 status='accepted'
             ).first()
-            
             if not access_request:
-                return jsonify({'message': 'You need accepted access to start a chat'}), 403
-        
+                return jsonify({'message': 'Unauthorized'}), 403
+
         # Check if chat already exists
-        existing_chat = Chat.query.join(ChatParticipant).filter(
-            ChatParticipant.user_id == current_user_id,
-            ChatParticipant.chat_id == Chat.id,
-            Chat.id.in_(
-                db.session.query(ChatParticipant.chat_id).filter(
-                    ChatParticipant.user_id == invention.inventor_id
-                )
-            )
-        ).first()
-        
+        existing_chat = Chat.query.filter_by(invention_id=invention_id).first()
         if existing_chat:
             return jsonify({
                 'message': 'Chat already exists',
                 'chat_id': existing_chat.id
             }), 200
-        
+
         # Create new chat
         new_chat = Chat(
-            title=title or f"Chat about {invention.title}",
             invention_id=invention_id,
-            created_at=datetime.now(timezone.utc)
+            title=f"Chat for {invention.title}"
         )
         db.session.add(new_chat)
         db.session.flush()  # Get the chat ID
-        
+
         # Add participants
         inventor_participant = ChatParticipant(
             chat_id=new_chat.id,
             user_id=invention.inventor_id,
             role='inventor'
         )
-        
+
         investor_participant = ChatParticipant(
             chat_id=new_chat.id,
             user_id=current_user_id,
             role='investor'
         )
-        
-        # Store encryption keys for both participants
-        if identity_public_key and signed_pre_public_key:
-            # Validate key format
-            try:
-                # Attempt to decode base64 keys
-                base64.b64decode(identity_public_key)
-                base64.b64decode(signed_pre_public_key)
-            except Exception as e:
-                return jsonify({
-                    'message': 'Invalid key format',
-                    'error': 'Keys must be base64 encoded'
-                }), 400
-                
-            # Store keys for inventor
-            inventor_key = ChatKey(
-                chat_id=new_chat.id,
-                user_id=invention.inventor_id,
-                identity_public_key=identity_public_key,
-                signed_pre_public_key=signed_pre_public_key
-            )
-            
-            # Store keys for investor
-            investor_key = ChatKey(
-                chat_id=new_chat.id,
-                user_id=current_user_id,
-                identity_public_key=identity_public_key,
-                signed_pre_public_key=signed_pre_public_key
-            )
-            
-            db.session.add(inventor_key)
-            db.session.add(investor_key)
-        
+
         db.session.add(inventor_participant)
         db.session.add(investor_participant)
         db.session.commit()
-        
+
         print(f"Successfully created chat {new_chat.id} for invention {invention_id}")
-        
+
         return jsonify({
             'message': 'Chat started successfully',
             'chat_id': new_chat.id
