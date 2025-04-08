@@ -14,118 +14,46 @@ class Chat {
     }
 
     async initialize(inventionId, inventorName, chatId) {
+        this.inventorName = inventorName;
+        this.inventionTitle = inventionId;
+        this.chatId = chatId;
+        
+        // Get encryption keys from sessionStorage
+        const chatKey = `chat_keys_${chatId}`;
+        const chatData = JSON.parse(sessionStorage.getItem(chatKey));
+        
+        if (!chatData) {
+            console.error('No chat data found for key:', chatKey);
+            this.showError('Chat data not found. Please try starting the chat again.');
+            return;
+        }
+
         try {
-            console.log('Initializing chat with data:', {
-                chatId,
-                inventionId,
-                inventorName
-            });
-
-            this.inventorName = inventorName;
-            this.inventionTitle = inventionId;
-            this.chatId = chatId;
+            console.log('Found chat data:', chatData);
             
-            // Get encryption keys from sessionStorage
-            const chatKey = `chat_keys_${chatId}`;
-            const chatData = JSON.parse(sessionStorage.getItem(chatKey));
+            // Import the keys for decryption
+            const privateKeyBytes = await this.decryptStoredKey(chatData.private_key, chatData.raw_key, chatData.iv);
+            this.privateKey = await window.crypto.subtle.importKey(
+                'pkcs8',
+                privateKeyBytes,
+                {
+                    name: 'RSA-OAEP',
+                    hash: 'SHA-256'
+                },
+                true,
+                ['decrypt']
+            );
+
+            // Load messages and other user's public key
+            await this.loadMessages();
             
-            if (!chatData) {
-                console.error('No chat data found for key:', chatKey);
-                this.showError('Chat data not found. Please try starting the chat again.');
-                return;
-            }
-
-            // Validate required fields
-            if (!chatData.raw_key || !chatData.iv || !chatData.private_key) {
-                throw new Error('Missing required encryption data');
-            }
-
-            console.log('Processing encryption keys...');
+            // Start polling for new messages
+            this.startPolling();
             
-            try {
-                // Convert base64 to Uint8Array
-                const rawKeyArray = Uint8Array.from(atob(chatData.raw_key), c => c.charCodeAt(0));
-                const ivArray = Uint8Array.from(atob(chatData.iv), c => c.charCodeAt(0));
-                const encryptedPrivateKeyArray = Uint8Array.from(atob(chatData.private_key), c => c.charCodeAt(0));
-
-                console.log('Key lengths:', {
-                    rawKey: rawKeyArray.length,
-                    iv: ivArray.length,
-                    encryptedPrivateKey: encryptedPrivateKeyArray.length
-                });
-
-                // Import the AES key
-                const aesKey = await window.crypto.subtle.importKey(
-                    'raw',
-                    rawKeyArray,
-                    { name: 'AES-GCM', length: 256 },
-                    false,
-                    ['decrypt']
-                );
-
-                console.log('AES key imported successfully');
-
-                // Decrypt the private key
-                const decryptedPrivateKey = await window.crypto.subtle.decrypt(
-                    { 
-                        name: 'AES-GCM', 
-                        iv: ivArray 
-                    },
-                    aesKey,
-                    encryptedPrivateKeyArray
-                );
-
-                console.log('Private key decrypted successfully');
-                console.log('Decrypted private key length:', decryptedPrivateKey.byteLength);
-
-                try {
-                    // Import the private key directly from the decrypted binary data
-                    this.privateKey = await window.crypto.subtle.importKey(
-                        'pkcs8',
-                        decryptedPrivateKey,
-                        {
-                            name: 'RSA-OAEP',
-                            hash: 'SHA-256'
-                        },
-                        true,
-                        ['decrypt']
-                    );
-
-                    console.log('Private key imported successfully');
-                } catch (importError) {
-                    console.error('Error importing private key:', importError);
-                    
-                    // Try to diagnose the key format
-                    const keyView = new Uint8Array(decryptedPrivateKey);
-                    console.log('First few bytes of decrypted key:', 
-                        Array.from(keyView.slice(0, 16))
-                            .map(b => b.toString(16).padStart(2, '0'))
-                            .join(' ')
-                    );
-                    
-                    throw new Error(`Failed to import private key: ${importError.message}`);
-                }
-
-                // After successful key processing
-                console.log('Chat initialized successfully');
-                
-                // Render the chat interface
-                this.render();
-                
-                // Set up event listeners
-                this.setupEventListeners();
-                
-                // Load messages and start polling
-                await this.loadMessages();
-                this.startPolling();
-            } catch (e) {
-                console.error('Error processing encryption keys:', e);
-                throw new Error(`Failed to process encryption keys: ${e.message}`);
-            }
+            console.log('Chat initialized successfully');
         } catch (error) {
             console.error('Error initializing chat:', error);
-            this.showError(`Failed to initialize chat: ${error.message}`);
-            throw error;
+            this.showError('Failed to initialize chat encryption');
         }
     }
 
@@ -154,26 +82,151 @@ class Chat {
         return decryptedKey;
     }
 
-    async decryptMessage(encryptedContent) {
+    async decryptMessage(encryptedContent, isSender) {
         try {
+            // If this is a message we sent, we can't decrypt it (it was encrypted with the recipient's public key)
+            if (isSender) {
+                return '[Message sent - encrypted with recipient\'s key]';
+            }
+
             if (!this.privateKey) {
                 throw new Error('Private key not available for decryption');
             }
 
-            // Decode the base64 encrypted content
-            const encryptedBytes = Uint8Array.from(atob(encryptedContent), c => c.charCodeAt(0));
+            // Log the private key details before attempting decryption
+            try {
+                const keyInfo = await window.crypto.subtle.exportKey('jwk', this.privateKey);
+                console.log('Private key info before decryption:', {
+                    keyType: keyInfo.kty,
+                    algorithm: keyInfo.alg,
+                    keySize: keyInfo.n ? Math.ceil((keyInfo.n.length * 6) / 8) * 8 : 'unknown',
+                    modulusLength: keyInfo.n ? (keyInfo.n.length * 6) : 'unknown'
+                });
+            } catch (keyError) {
+                console.error('Error getting key info:', keyError);
+            }
 
-            // Decrypt the content
-            const decryptedBytes = await window.crypto.subtle.decrypt(
-                { name: 'RSA-OAEP' },
-                this.privateKey,
-                encryptedBytes
-            );
+            try {
+                // Try to parse as JSON first (new format)
+                const messageData = JSON.parse(encryptedContent);
+                console.log('Message format:', messageData);
+                
+                if (messageData.encryptedKey && messageData.encryptedData && messageData.iv) {
+                    console.log('Decrypting message in new format');
+                    
+                    const encryptedKeyBytes = Uint8Array.from(atob(messageData.encryptedKey), c => c.charCodeAt(0));
+                    const encryptedDataBytes = Uint8Array.from(atob(messageData.encryptedData), c => c.charCodeAt(0));
+                    const ivBytes = Uint8Array.from(atob(messageData.iv), c => c.charCodeAt(0));
 
-            // Convert decrypted bytes to text
-            return new TextDecoder().decode(decryptedBytes);
+                    console.log('Encrypted data lengths:', {
+                        key: encryptedKeyBytes.length,
+                        data: encryptedDataBytes.length,
+                        iv: ivBytes.length
+                    });
+
+                    // First decrypt the AES key using RSA
+                    const decryptedKeyBytes = await window.crypto.subtle.decrypt(
+                        { 
+                            name: 'RSA-OAEP',
+                            hash: { name: 'SHA-256' }
+                        },
+                        this.privateKey,
+                        encryptedKeyBytes
+                    );
+
+                    console.log('AES key decrypted successfully, length:', decryptedKeyBytes.byteLength);
+
+                    // Import the decrypted AES key
+                    const aesKey = await window.crypto.subtle.importKey(
+                        'raw',
+                        decryptedKeyBytes,
+                        { name: 'AES-GCM', length: 256 },
+                        false,
+                        ['decrypt']
+                    );
+
+                    console.log('AES key imported successfully');
+
+                    // Use the AES key to decrypt the actual message
+                    const decryptedBytes = await window.crypto.subtle.decrypt(
+                        { name: 'AES-GCM', iv: ivBytes },
+                        aesKey,
+                        encryptedDataBytes
+                    );
+
+                    console.log('Message decrypted successfully, length:', decryptedBytes.byteLength);
+
+                    // Convert decrypted bytes to text
+                    return new TextDecoder().decode(decryptedBytes);
+                } else {
+                    throw new Error('Invalid message format');
+                }
+            } catch (jsonError) {
+                // If JSON parsing fails or message format is invalid, try the old format
+                console.log('Falling back to old message format');
+                console.log('JSON parse error:', jsonError);
+                
+                try {
+                    // Convert base64 to Uint8Array
+                    const encryptedBytes = Uint8Array.from(atob(encryptedContent), c => c.charCodeAt(0));
+                    console.log('Encrypted bytes length:', encryptedBytes.length);
+                    
+                    // Log the first few bytes for debugging
+                    console.log('First few bytes:', Array.from(encryptedBytes.slice(0, 16))
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join(' '));
+
+                    // Try to decrypt with RSA-OAEP with explicit hash
+                    const decryptedBytes = await window.crypto.subtle.decrypt(
+                        { 
+                            name: 'RSA-OAEP',
+                            hash: { name: 'SHA-256' }
+                        },
+                        this.privateKey,
+                        encryptedBytes
+                    ).catch(error => {
+                        console.error('RSA decryption failed:', error);
+                        throw error;
+                    });
+                    
+                    console.log('Decrypted bytes length:', decryptedBytes.byteLength);
+                    
+                    // Convert decrypted bytes to text
+                    const decryptedText = new TextDecoder().decode(decryptedBytes);
+                    console.log('Decrypted text length:', decryptedText.length);
+                    
+                    return decryptedText;
+                } catch (decryptError) {
+                    console.error('RSA decryption error:', decryptError);
+                    console.error('Error details:', {
+                        name: decryptError.name,
+                        message: decryptError.message,
+                        stack: decryptError.stack
+                    });
+
+                    // Log key information
+                    try {
+                        const keyInfo = await window.crypto.subtle.exportKey('jwk', this.privateKey);
+                        console.log('Private key info during failed decryption:', {
+                            keyType: keyInfo.kty,
+                            algorithm: keyInfo.alg,
+                            keySize: keyInfo.n ? Math.ceil((keyInfo.n.length * 6) / 8) * 8 : 'unknown',
+                            modulusLength: keyInfo.n ? (keyInfo.n.length * 6) : 'unknown'
+                        });
+                    } catch (keyError) {
+                        console.error('Error getting key info:', keyError);
+                    }
+
+                    throw decryptError;
+                }
+            }
         } catch (error) {
             console.error('Error decrypting message:', error);
+            console.error('Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
             return '[Unable to decrypt message]';
         }
     }
@@ -249,19 +302,51 @@ class Chat {
                 );
             }
 
-            // Encrypt the message
+            // Generate a random AES key for this message
+            const aesKey = await window.crypto.subtle.generateKey(
+                { name: 'AES-GCM', length: 256 },
+                true,
+                ['encrypt']
+            );
+
+            // Generate IV for AES encryption
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+            // Export the AES key
+            const rawAesKey = await window.crypto.subtle.exportKey('raw', aesKey);
+
+            // Encrypt the AES key with recipient's public key
+            const encryptedAesKey = await window.crypto.subtle.encrypt(
+                { 
+                    name: 'RSA-OAEP',
+                    hash: { name: 'SHA-256' }
+                },
+                this.otherUserPublicKey,
+                rawAesKey
+            );
+
+            // Encrypt the actual message with AES
             const encoder = new TextEncoder();
             const encodedContent = encoder.encode(content);
             const encryptedContent = await window.crypto.subtle.encrypt(
-                { name: 'RSA-OAEP' },
-                this.otherUserPublicKey,
+                { name: 'AES-GCM', iv: iv },
+                aesKey,
                 encodedContent
             );
 
-            // Convert to base64 for transmission
-            const encryptedBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedContent)));
+            // Convert everything to base64
+            const encryptedKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedAesKey)));
+            const encryptedDataBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedContent)));
+            const ivBase64 = btoa(String.fromCharCode(...iv));
 
-            // Send only the encrypted content to the server
+            // Create the message object
+            const messageObject = {
+                encryptedKey: encryptedKeyBase64,
+                encryptedData: encryptedDataBase64,
+                iv: ivBase64
+            };
+
+            // Send the encrypted message to the server
             const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/send`, {
                 method: 'POST',
                 headers: {
@@ -270,7 +355,7 @@ class Chat {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({ 
-                    encrypted_content: encryptedBase64
+                    encrypted_content: JSON.stringify(messageObject)
                 }),
                 credentials: 'include'
             });
@@ -285,7 +370,7 @@ class Chat {
                 // Add the message to our local list with the encrypted content
                 this.messages.push({
                     ...data.message,
-                    encrypted_content: encryptedBase64,
+                    encrypted_content: JSON.stringify(messageObject),
                     is_sender: true
                 });
                 await this.renderMessages();
@@ -412,50 +497,29 @@ class Chat {
 
         this.container.innerHTML = `
             <div class="chat-container">
-                <div class="chat-messages"></div>
+                <div class="chat-messages">
+                    ${this.messages.length > 0 ? this.renderMessages() : '<div class="no-messages">No messages yet</div>'}
+                </div>
                 <div class="chat-input">
                     <textarea placeholder="Type your message..." rows="3"></textarea>
                     <button class="send-button">Send</button>
                 </div>
             </div>
         `;
-    }
 
-    setupEventListeners() {
-        const textarea = this.container.querySelector('textarea');
+        // Add event listeners
         const sendButton = this.container.querySelector('.send-button');
-
-        if (!textarea || !sendButton) {
-            console.error('Chat input elements not found');
-            return;
-        }
-
-        // Send message when clicking the send button
-        sendButton.addEventListener('click', () => {
-            const content = textarea.value.trim();
-            if (content) {
-                this.sendMessage(content);
-                textarea.value = '';
-            }
-        });
-
-        // Send message when pressing Enter (but allow Shift+Enter for new lines)
-        textarea.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                const content = textarea.value.trim();
-                if (content) {
-                    this.sendMessage(content);
-                    textarea.value = '';
+        const textarea = this.container.querySelector('textarea');
+        
+        if (sendButton && textarea) {
+            sendButton.addEventListener('click', () => this.sendMessage(textarea.value));
+            textarea.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage(textarea.value);
                 }
-            }
-        });
-
-        // Auto-resize textarea
-        textarea.addEventListener('input', () => {
-            textarea.style.height = 'auto';
-            textarea.style.height = textarea.scrollHeight + 'px';
-        });
+            });
+        }
     }
 
     showError(message) {

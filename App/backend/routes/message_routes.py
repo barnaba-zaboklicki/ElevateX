@@ -9,7 +9,11 @@ from models.chat_participant import ChatParticipant
 from models.chat_key import ChatKey
 from models.access_request import AccessRequest
 from database import db
-from utils.s3_utils import store_encrypted_message
+from utils.s3_utils import store_encrypted_message, get_message_from_s3
+import base64
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 message_bp = Blueprint('message', __name__)
 
@@ -55,7 +59,7 @@ def get_chats():
                 'title': chat.title,
                 'other_user_name': other_user_name,
                 'other_user_role': other_participant.role,
-                'last_message': last_message.content if last_message else None,
+                'last_message': '[Encrypted message]' if last_message else None,
                 'last_message_at': last_message.created_at.isoformat() if last_message else None
             })
         
@@ -148,7 +152,6 @@ def start_chat():
             # Validate key format
             try:
                 # Attempt to decode base64 keys
-                import base64
                 base64.b64decode(identity_public_key)
                 base64.b64decode(signed_pre_public_key)
             except Exception as e:

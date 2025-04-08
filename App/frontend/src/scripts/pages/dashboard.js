@@ -2118,6 +2118,27 @@ async function handleStartChat(inventionId) {
         const chatData = await chatResponse.json();
         console.log('Chat started successfully:', chatData);
 
+        // Import the inventor's public key
+        if (chatData.inventor_public_key) {
+            console.log('Importing inventor\'s public key...');
+            const inventorKeyBytes = Uint8Array.from(atob(chatData.inventor_public_key), c => c.charCodeAt(0));
+            const inventorPublicKey = await window.crypto.subtle.importKey(
+                'spki',
+                inventorKeyBytes,
+                {
+                    name: 'RSA-OAEP',
+                    hash: { name: 'SHA-256' }
+                },
+                true,
+                ['encrypt']
+            );
+            console.log('Inventor\'s public key imported successfully');
+
+            // Store the inventor's public key for later use
+            const inventorKeyBase64 = chatData.inventor_public_key;
+            sessionStorage.setItem(`inventor_key_${chatData.chat_id}`, inventorKeyBase64);
+        }
+
         // Store keys in sessionStorage
         const chatKey = `chat_keys_${chatData.chat_id}`;
         const storedChatData = {
