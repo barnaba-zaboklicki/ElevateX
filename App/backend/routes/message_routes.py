@@ -76,15 +76,19 @@ def start_chat():
         data = request.get_json()
         invention_id = data.get('invention_id')
         title = data.get('title')
-        public_key = data.get('public_key')
-        private_key = data.get('private_key')
+        identity_public_key = data.get('public_key')  # Frontend still sends as public_key
+        signed_pre_public_key = data.get('private_key')  # Frontend still sends as private_key
+        
+        print(f"Starting chat for invention {invention_id} by user {current_user_id}")
         
         if not invention_id:
+            print("Error: Missing invention_id")
             return jsonify({'message': 'Invention ID is required'}), 400
         
         # Get the invention
         invention = Invention.query.get(invention_id)
         if not invention:
+            print(f"Error: Invention {invention_id} not found")
             return jsonify({'message': 'Invention not found'}), 404
         
         # Check if user is the inventor or has accepted access
@@ -120,6 +124,7 @@ def start_chat():
         # Create new chat
         new_chat = Chat(
             title=title or f"Chat about {invention.title}",
+            invention_id=invention_id,
             created_at=datetime.now(timezone.utc)
         )
         db.session.add(new_chat)
@@ -139,21 +144,33 @@ def start_chat():
         )
         
         # Store encryption keys for both participants
-        if public_key and private_key:
+        if identity_public_key and signed_pre_public_key:
+            # Validate key format
+            try:
+                # Attempt to decode base64 keys
+                import base64
+                base64.b64decode(identity_public_key)
+                base64.b64decode(signed_pre_public_key)
+            except Exception as e:
+                return jsonify({
+                    'message': 'Invalid key format',
+                    'error': 'Keys must be base64 encoded'
+                }), 400
+                
             # Store keys for inventor
             inventor_key = ChatKey(
                 chat_id=new_chat.id,
                 user_id=invention.inventor_id,
-                public_key=public_key,
-                private_key=private_key
+                identity_public_key=identity_public_key,
+                signed_pre_public_key=signed_pre_public_key
             )
             
             # Store keys for investor
             investor_key = ChatKey(
                 chat_id=new_chat.id,
                 user_id=current_user_id,
-                public_key=public_key,
-                private_key=private_key
+                identity_public_key=identity_public_key,
+                signed_pre_public_key=signed_pre_public_key
             )
             
             db.session.add(inventor_key)
@@ -163,11 +180,14 @@ def start_chat():
         db.session.add(investor_participant)
         db.session.commit()
         
+        print(f"Successfully created chat {new_chat.id} for invention {invention_id}")
+        
         return jsonify({
             'message': 'Chat started successfully',
             'chat_id': new_chat.id
         }), 201
     except Exception as e:
+        print(f"Error in start_chat: {str(e)}")
         db.session.rollback()
         return jsonify({
             'message': 'Failed to start chat',
@@ -243,7 +263,7 @@ def get_chat_messages(chat_id):
             'other_user': {
                 'id': other_user.id,
                 'name': f"{other_user.first_name} {other_user.last_name}",
-                'public_key': other_user_key.public_key
+                'public_key': other_user_key.identity_public_key
             },
             'messages': formatted_messages
         }), 200

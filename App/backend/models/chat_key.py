@@ -7,8 +7,8 @@ class ChatKey(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     chat_id = db.Column(db.Integer, db.ForeignKey('chats.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    public_key = db.Column(db.Text, nullable=False)
-    private_key = db.Column(db.Text, nullable=False)
+    identity_public_key = db.Column(db.Text, nullable=False)
+    signed_pre_public_key = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
@@ -19,6 +19,7 @@ class ChatKey(db.Model):
             'id': self.id,
             'chat_id': self.chat_id,
             'user_id': self.user_id,
-            'public_key': self.public_key,
+            'identity_public_key': self.identity_public_key,
+            'signed_pre_public_key': self.signed_pre_public_key,
             'created_at': self.created_at.isoformat()
         } 
