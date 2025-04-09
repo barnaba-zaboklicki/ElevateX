@@ -6,6 +6,7 @@ from config.s3_config import URL_EXPIRATION
 import io
 from datetime import datetime
 import base64
+import json
 
 load_dotenv()
 
@@ -277,7 +278,7 @@ def store_encrypted_message(chat_id, message_id, encrypted_content):
     Args:
         chat_id (int): The ID of the chat
         message_id (int): The ID of the message
-        encrypted_content (str): The base64 encoded encrypted message content
+        encrypted_content (str): The encrypted message content (either JSON string or base64)
         
     Returns:
         dict: A dictionary containing success status and S3 key or error message
@@ -305,22 +306,27 @@ def store_encrypted_message(chat_id, message_id, encrypted_content):
         s3_key = f"chats/messages/{chat_id}/{message_id}_{timestamp}.enc"
         print(f"Generated S3 key: {s3_key}")
         
-        # Decode base64 content
-        print("Attempting to decode base64 content...")
+        # Check if content is already JSON
         try:
-            decoded_content = base64.b64decode(encrypted_content)
-            print(f"Successfully decoded base64 content. Length: {len(decoded_content)}")
-        except Exception as e:
-            print(f"Error decoding base64 content: {str(e)}")
-            raise ValueError(f"Invalid base64 content: {str(e)}")
+            # Try to parse as JSON to validate structure
+            json.loads(encrypted_content)
+            # If it's valid JSON, store it directly
+            content_to_store = encrypted_content.encode('utf-8')
+        except json.JSONDecodeError:
+            # If not JSON, assume it's base64 and decode it
+            try:
+                content_to_store = base64.b64decode(encrypted_content)
+            except Exception as e:
+                print(f"Error decoding base64 content: {str(e)}")
+                raise ValueError(f"Invalid content format: {str(e)}")
         
         # Upload to S3
         print(f"Uploading to S3 bucket: {bucket_name}")
         s3_client.put_object(
             Bucket=bucket_name,
             Key=s3_key,
-            Body=decoded_content,
-            ContentType='application/octet-stream',
+            Body=content_to_store,
+            ContentType='application/json' if isinstance(content_to_store, bytes) and content_to_store.startswith(b'{') else 'application/octet-stream',
             ServerSideEncryption='AES256'
         )
         
@@ -372,13 +378,24 @@ def get_message_from_s3(s3_key):
             Key=s3_key
         )
         
-        # Read and encode content
-        encrypted_content = base64.b64encode(response['Body'].read()).decode('utf-8')
+        # Read content
+        content = response['Body'].read()
         
-        return {
-            'success': True,
-            'content': encrypted_content
-        }
+        # Check if content is JSON
+        try:
+            # Try to decode as UTF-8 and parse as JSON
+            content_str = content.decode('utf-8')
+            json.loads(content_str)  # Validate JSON structure
+            return {
+                'success': True,
+                'content': content_str
+            }
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            # If not JSON, encode as base64
+            return {
+                'success': True,
+                'content': base64.b64encode(content).decode('utf-8')
+            }
         
     except ClientError as e:
         print(f"AWS S3 error retrieving message: {str(e)}")
