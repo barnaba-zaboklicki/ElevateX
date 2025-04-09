@@ -1455,11 +1455,17 @@ async function handleMenuClick(menuId, chatId = null) {
 
                     // Add click event listeners to start chat buttons
                     document.querySelectorAll('.start-chat-btn').forEach(btn => {
-                        console.log('Found chat button:', btn.dataset.inventionId);
-                        btn.addEventListener('click', (e) => {
+                        btn.addEventListener('click', async (e) => {
                             e.stopPropagation();
                             const inventionId = btn.dataset.inventionId;
-                            handleStartChat(inventionId);
+                            console.log('Start chat clicked for invention:', inventionId);
+                            
+                            try {
+                                await handleStartChat(inventionId);
+                            } catch (error) {
+                                console.error('Error starting chat:', error);
+                                alert('Failed to start chat: ' + error.message);
+                            }
                         });
                     });
                 } catch (error) {
@@ -2059,92 +2065,41 @@ async function handleStartChat(inventionId) {
             throw new Error('User information not found');
         }
 
-        // Get the invention details
-        const inventionResponse = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            },
-            credentials: 'include'
-        });
+        console.log('Starting chat for invention:', inventionId);
 
-        if (!inventionResponse.ok) {
-            throw new Error('Failed to fetch invention details');
-        }
+        // Create a new chat with just the invention ID
+        const requestBody = {
+            invention_id: inventionId
+        };
+        console.log('Request body:', requestBody);
 
-        const invention = await inventionResponse.json();
-        
-        // Prompt for password first
-        const password = await promptForPassword();
-        if (!password) {
-            throw new Error('Password is required to start chat');
-        }
-
-        // Get the password hash from the server
-        const hashResponse = await fetch('https://127.0.0.1:5000/api/auth/password-hash', {
+        const createChatResponse = await fetch('https://127.0.0.1:5000/api/messages/start', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ password }),
+            body: JSON.stringify(requestBody),
             credentials: 'include'
         });
 
-        if (!hashResponse.ok) {
-            throw new Error('Failed to get password hash');
+        if (!createChatResponse.ok) {
+            const errorData = await createChatResponse.json();
+            console.error('Chat creation error:', errorData);
+            throw new Error(errorData.message || 'Failed to create chat');
         }
 
-        const { password_hash } = await hashResponse.json();
+        const chatData = await createChatResponse.json();
+        console.log('Created chat:', chatData);
+
+        // Show success message and direct user to messages
+        alert('Chat created successfully! Please go to the Messages section to start chatting.');
         
-        // Store the password hash temporarily
-        localStorage.setItem('password_hash', password_hash);
-
-        // Check if we already have a chat with the inventor
-        const chatResponse = await fetch(`https://127.0.0.1:5000/api/chats/user/${invention.user_id}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            },
-            credentials: 'include'
-        });
-
-        let chatId;
-        if (chatResponse.ok) {
-            const chatData = await chatResponse.json();
-            chatId = chatData.id;
-        } else {
-            // Create a new chat
-            const createChatResponse = await fetch('https://127.0.0.1:5000/api/chats', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    other_user_id: invention.user_id
-                }),
-                credentials: 'include'
-            });
-
-            if (!createChatResponse.ok) {
-                throw new Error('Failed to create chat');
-            }
-
-            const chatData = await createChatResponse.json();
-            chatId = chatData.id;
+        // Optionally, you can automatically switch to the messages section
+        const messagesLink = document.querySelector('a[data-menu="messages"]');
+        if (messagesLink) {
+            messagesLink.click();
         }
-
-        // Initialize the chat
-        const chat = new Chat('chat-container');
-        await chat.initialize(chatId, invention.user_id);
-
-        // Clear the password hash after initialization
-        localStorage.removeItem('password_hash');
-
-        // Show the chat container
-        document.getElementById('chat-container').style.display = 'block';
-        document.getElementById('inventions-container').style.display = 'none';
 
     } catch (error) {
         console.error('Error starting chat:', error);
