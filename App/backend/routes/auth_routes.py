@@ -4,6 +4,13 @@ import bcrypt
 from datetime import datetime, timezone
 from models.user import User
 from database import db
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+import hashlib
+import os
+from base64 import b64encode
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -40,6 +47,53 @@ def register():
     try:
         db.session.add(new_user)
         db.session.commit()
+        
+        # Generate encryption keys for the user
+        # Generate RSA key pair
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048
+        )
+        
+        # Get public key in PEM format
+        public_key_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode('utf-8')
+        
+        # Encrypt private key with password hash
+        key = hashlib.sha256(hashed_password).digest()
+        iv = os.urandom(16)
+        
+        # Serialize private key
+        private_key_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        
+        # Pad the data
+        padder = padding.PKCS7(128).padder()
+        padded_data = padder.update(private_key_bytes) + padder.finalize()
+        
+        # Encrypt
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
+        encryptor = cipher.encryptor()
+        encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
+        
+        # Combine IV and encrypted data
+        encrypted_private_key = b64encode(iv + encrypted_data).decode('utf-8')
+        
+        # Create user key entry
+        from models.user_key import UserKey
+        user_key = UserKey(
+            user_id=new_user.id,
+            public_key=public_key_pem,
+            encrypted_private_key=encrypted_private_key
+        )
+        db.session.add(user_key)
+        db.session.commit()
+        
         return jsonify({'message': 'Registration successful'}), 201
     except Exception as e:
         db.session.rollback()
@@ -118,4 +172,27 @@ def update_profile():
         }), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({'message': 'Failed to update profile', 'error': str(e)}), 500 
+        return jsonify({'message': 'Failed to update profile', 'error': str(e)}), 500
+
+@auth_bp.route('/password-hash', methods=['POST'])
+@jwt_required()
+def get_password_hash():
+    data = request.get_json()
+    password = data.get('password')
+    
+    if not password:
+        return jsonify({'message': 'Password is required'}), 400
+    
+    # Get the current user
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+    
+    # Generate the hash using the same method as during registration
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), user.password_hash.encode('utf-8'))
+    
+    return jsonify({
+        'password_hash': hashed_password.decode('utf-8')
+    }), 200 

@@ -1212,6 +1212,33 @@ async function handleMenuClick(menuId, chatId = null) {
         loadDashboardContent(user.role);
     } else if (menuId === 'messages') {
         try {
+            // Prompt for password first
+            const password = await promptForPassword();
+            if (!password) {
+                throw new Error('Password is required to access messages');
+            }
+
+            // Get the password hash from the server
+            const token = localStorage.getItem('token');
+            const hashResponse = await fetch('https://127.0.0.1:5000/api/auth/password-hash', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ password }),
+                credentials: 'include'
+            });
+
+            if (!hashResponse.ok) {
+                throw new Error('Failed to get password hash');
+            }
+
+            const { password_hash } = await hashResponse.json();
+            
+            // Store the password hash temporarily
+            localStorage.setItem('password_hash', password_hash);
+
             contentDiv.innerHTML = `
                 <div class="welcome-section">
                     <h1>Welcome, ${user.first_name}!</h1>
@@ -1228,11 +1255,8 @@ async function handleMenuClick(menuId, chatId = null) {
                             </div>
                             <div class="messages-main">
                                 <div class="chat-container" id="chat-container">
-                                    <div class="chat-messages">
-                                        <!-- Messages will be displayed here -->
-                                    </div>
-                                    <div class="chat-input">
-                                        <!-- Input area will be added later -->
+                                    <div class="chat-placeholder">
+                                        Select a chat to start messaging
                                     </div>
                                 </div>
                             </div>
@@ -1241,7 +1265,6 @@ async function handleMenuClick(menuId, chatId = null) {
                 </div>
             `;
 
-            const token = localStorage.getItem('token');
             if (!token) {
                 throw new Error('You must be logged in to view messages');
             }
@@ -1261,11 +1284,21 @@ async function handleMenuClick(menuId, chatId = null) {
 
             const data = await response.json();
             console.log('Received messages:', data);
+            console.log('Chat data structure:', {
+                chats: data.chats.map(chat => ({
+                    id: chat.id,
+                    other_user_id: chat.other_user_id,
+                    title: chat.title,
+                    other_user_name: chat.other_user_name,
+                    other_user_role: chat.other_user_role
+                }))
+            });
+
             const messagesList = document.getElementById('messages-list');
             
             if (data.chats && data.chats.length > 0) {
                 messagesList.innerHTML = data.chats.map(chat => `
-                    <div class="chat-item" data-chat-id="${chat.id}">
+                    <div class="chat-item" data-chat-id="${chat.id}" data-other-user-id="${chat.other_user_id}">
                         <h4>${chat.title}</h4>
                         <p>${chat.other_user_name} (${chat.other_user_role})</p>
                         <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
@@ -1274,24 +1307,44 @@ async function handleMenuClick(menuId, chatId = null) {
 
                 // Add click handlers to chat items
                 document.querySelectorAll('.chat-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const chatId = item.dataset.chatId;
-                        handleMenuClick('messages', chatId);
+                    item.addEventListener('click', async () => {
+                        const chatId = item.getAttribute('data-chat-id');
+                        const otherUserId = item.getAttribute('data-other-user-id');
+                        
+                        console.log('Chat clicked:', { 
+                            chatId, 
+                            otherUserId,
+                            dataset: item.dataset,
+                            attributes: {
+                                chatId: item.getAttribute('data-chat-id'),
+                                otherUserId: item.getAttribute('data-other-user-id')
+                            }
+                        });
+                        
+                        if (!chatId || !otherUserId) {
+                            console.error('Missing required chat data:', { chatId, otherUserId });
+                            return;
+                        }
+                        
+                        // Clear the placeholder and set up chat UI
+                        const chatContainer = document.getElementById('chat-container');
+                        chatContainer.innerHTML = `
+                            <div class="chat-messages"></div>
+                            <div class="chat-input">
+                                <textarea placeholder="Type your message..." rows="3"></textarea>
+                                <button class="send-button">Send</button>
+                            </div>
+                        `;
+                        
+                        // Initialize the chat only when a chat is selected
+                        const chat = new Chat('chat-container');
+                        await chat.initialize(chatId, otherUserId);
                     });
                 });
             } else {
                 messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
             }
 
-            // Initialize chat if we have a chat ID
-            if (chatId && typeof Chat !== 'undefined') {
-                const chat = new Chat('chat-container');
-                const chatKey = `chat_keys_${chatId}`;
-                const chatData = JSON.parse(sessionStorage.getItem(chatKey));
-                if (chatData) {
-                    chat.initialize(chatData.invention_id, chatData.inventor_name, chatId);
-                }
-            }
         } catch (error) {
             console.error('Error:', error);
             contentDiv.innerHTML = `
@@ -1994,15 +2047,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Function to handle starting a chat
 async function handleStartChat(inventionId) {
     try {
-        console.log('Starting chat for invention:', inventionId);
-        
-        // Get invention details first
+        // Get the token from localStorage
         const token = localStorage.getItem('token');
         if (!token) {
             throw new Error('You must be logged in to start a chat');
         }
 
-        console.log('Fetching invention details...');
+        // Get the current user
+        const currentUser = JSON.parse(localStorage.getItem('user'));
+        if (!currentUser) {
+            throw new Error('User information not found');
+        }
+
+        // Get the invention details
         const inventionResponse = await fetch(`https://127.0.0.1:5000/api/inventions/${inventionId}`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -2015,130 +2072,83 @@ async function handleStartChat(inventionId) {
             throw new Error('Failed to fetch invention details');
         }
 
-        const inventionData = await inventionResponse.json();
-        console.log('Invention details:', inventionData);
-
-        // Use inventor's name from the invention data
-        const inventorName = 'Inventor'; // Simplified for demo
-        console.log('Using inventor name:', inventorName);
-
-        // Generate encryption keys
-        console.log('Generating encryption keys...');
+        const invention = await inventionResponse.json();
         
-        // Generate RSA key pair
-        const keyPair = await window.crypto.subtle.generateKey(
-            {
-                name: "RSA-OAEP",
-                modulusLength: 2048,
-                publicExponent: new Uint8Array([1, 0, 1]),
-                hash: "SHA-256",
-            },
-            true,
-            ["encrypt", "decrypt"]
-        );
+        // Prompt for password first
+        const password = await promptForPassword();
+        if (!password) {
+            throw new Error('Password is required to start chat');
+        }
 
-        // Export keys
-        const publicKey = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
-        const privateKey = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-
-        // Generate AES key for key encryption
-        const aesKey = await window.crypto.subtle.generateKey(
-            { name: 'AES-GCM', length: 256 },
-            true,
-            ['encrypt', 'decrypt']
-        );
-
-        // Generate IV and export AES key
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const rawKey = await window.crypto.subtle.exportKey('raw', aesKey);
-
-        // Encrypt the private key
-        const encryptedPrivateKey = await window.crypto.subtle.encrypt(
-            { name: 'AES-GCM', iv: iv },
-            aesKey,
-            privateKey
-        );
-
-        // Convert all keys to base64
-        const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
-        const encryptedPrivateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(encryptedPrivateKey)));
-        const rawKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
-        const ivBase64 = btoa(String.fromCharCode(...iv));
-
-        console.log('Keys generated successfully:', {
-            publicKeyLength: publicKeyBase64.length,
-            encryptedPrivateKeyLength: encryptedPrivateKeyBase64.length,
-            rawKeyLength: rawKeyBase64.length,
-            ivLength: ivBase64.length
-        });
-
-        console.log('Starting chat with server...');
-        const chatResponse = await fetch('https://127.0.0.1:5000/api/messages/start', {
+        // Get the password hash from the server
+        const hashResponse = await fetch('https://127.0.0.1:5000/api/auth/password-hash', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                invention_id: inventionId,
-                title: `Chat about ${inventionData.title}`,
-                public_key: publicKeyBase64,
-                private_key: encryptedPrivateKeyBase64
-            }),
+            body: JSON.stringify({ password }),
             credentials: 'include'
         });
 
-        if (!chatResponse.ok) {
-            throw new Error('Failed to start chat');
+        if (!hashResponse.ok) {
+            throw new Error('Failed to get password hash');
         }
 
-        const chatData = await chatResponse.json();
-        console.log('Chat started successfully:', chatData);
+        const { password_hash } = await hashResponse.json();
+        
+        // Store the password hash temporarily
+        localStorage.setItem('password_hash', password_hash);
 
-        // Import the inventor's public key
-        if (chatData.inventor_public_key) {
-            console.log('Importing inventor\'s public key...');
-            const inventorKeyBytes = Uint8Array.from(atob(chatData.inventor_public_key), c => c.charCodeAt(0));
-            const inventorPublicKey = await window.crypto.subtle.importKey(
-                'spki',
-                inventorKeyBytes,
-                {
-                    name: 'RSA-OAEP',
-                    hash: { name: 'SHA-256' }
+        // Check if we already have a chat with the inventor
+        const chatResponse = await fetch(`https://127.0.0.1:5000/api/chats/user/${invention.user_id}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+            credentials: 'include'
+        });
+
+        let chatId;
+        if (chatResponse.ok) {
+            const chatData = await chatResponse.json();
+            chatId = chatData.id;
+        } else {
+            // Create a new chat
+            const createChatResponse = await fetch('https://127.0.0.1:5000/api/chats', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
                 },
-                true,
-                ['encrypt']
-            );
-            console.log('Inventor\'s public key imported successfully');
+                body: JSON.stringify({
+                    other_user_id: invention.user_id
+                }),
+                credentials: 'include'
+            });
 
-            // Store the inventor's public key for later use
-            const inventorKeyBase64 = chatData.inventor_public_key;
-            sessionStorage.setItem(`inventor_key_${chatData.chat_id}`, inventorKeyBase64);
+            if (!createChatResponse.ok) {
+                throw new Error('Failed to create chat');
+            }
+
+            const chatData = await createChatResponse.json();
+            chatId = chatData.id;
         }
 
-        // Store keys in sessionStorage
-        const chatKey = `chat_keys_${chatData.chat_id}`;
-        const storedChatData = {
-            invention_id: inventionId,
-            inventor_id: inventionData.inventor_id,
-            inventor_name: inventorName,
-            public_key: publicKeyBase64,
-            private_key: encryptedPrivateKeyBase64,
-            raw_key: rawKeyBase64,
-            iv: ivBase64,
-            created_at: new Date().toISOString()
-        };
+        // Initialize the chat
+        const chat = new Chat('chat-container');
+        await chat.initialize(chatId, invention.user_id);
 
-        // Store in sessionStorage
-        sessionStorage.setItem(chatKey, JSON.stringify(storedChatData));
-        console.log('Stored chat data in sessionStorage');
+        // Clear the password hash after initialization
+        localStorage.removeItem('password_hash');
 
-        // Switch to chat view
-        handleMenuClick('messages', chatData.chat_id);
+        // Show the chat container
+        document.getElementById('chat-container').style.display = 'block';
+        document.getElementById('inventions-container').style.display = 'none';
+
     } catch (error) {
         console.error('Error starting chat:', error);
-        showError(error.message);
+        alert(error.message);
     }
 }
 
@@ -2157,11 +2167,8 @@ async function loadMessagesContent() {
                 </div>
                 <div class="messages-main">
                     <div class="chat-container" id="chat-container">
-                        <div class="chat-messages">
-                            <!-- Messages will be displayed here -->
-                        </div>
-                        <div class="chat-input">
-                            <!-- Input area will be added later -->
+                        <div class="chat-placeholder">
+                            Select a chat to start messaging
                         </div>
                     </div>
                 </div>
@@ -2191,7 +2198,7 @@ async function loadMessagesContent() {
         
         if (data.chats && data.chats.length > 0) {
             messagesList.innerHTML = data.chats.map(chat => `
-                <div class="chat-item" data-chat-id="${chat.id}">
+                <div class="chat-item" data-chat-id="${chat.id}" data-other-user-id="${chat.other_user_id}">
                     <h4>${chat.title}</h4>
                     <p>${chat.other_user_name} (${chat.other_user_role})</p>
                     <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
@@ -2200,18 +2207,43 @@ async function loadMessagesContent() {
 
             // Add click handlers to chat items
             document.querySelectorAll('.chat-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const chatId = item.dataset.chatId;
-                    // TODO: Load chat messages
+                item.addEventListener('click', async () => {
+                    const chatId = item.getAttribute('data-chat-id');
+                    const otherUserId = item.getAttribute('data-other-user-id');
+                    
+                    console.log('Chat clicked:', { 
+                        chatId, 
+                        otherUserId,
+                        dataset: item.dataset,
+                        attributes: {
+                            chatId: item.getAttribute('data-chat-id'),
+                            otherUserId: item.getAttribute('data-other-user-id')
+                        }
+                    });
+                    
+                    if (!chatId || !otherUserId) {
+                        console.error('Missing required chat data:', { chatId, otherUserId });
+                        return;
+                    }
+                    
+                    // Clear the placeholder and set up chat UI
+                    const chatContainer = document.getElementById('chat-container');
+                    chatContainer.innerHTML = `
+                        <div class="chat-messages"></div>
+                        <div class="chat-input">
+                            <textarea placeholder="Type your message..." rows="3"></textarea>
+                            <button class="send-button">Send</button>
+                        </div>
+                    `;
+                    
+                    // Initialize the chat only when a chat is selected
+                    const chat = new Chat('chat-container');
+                    await chat.initialize(chatId, otherUserId);
                 });
             });
         } else {
             messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
         }
-
-        // Initialize the chat component
-        const chat = new Chat('chat-container');
-        chat.initialize('', '', '');
 
     } catch (error) {
         console.error('Error loading messages:', error);
@@ -2316,4 +2348,158 @@ async function handleAccessRequestResponse(notificationId, action) {
         console.error(`Error ${action}ing access request:`, error);
         alert(error.message || `Failed to ${action} access request. Please try again.`);
     }
+}
+
+// Function to prompt for password
+async function promptForPassword() {
+    return new Promise((resolve, reject) => {
+        const modal = document.createElement('div');
+        modal.className = 'password-prompt-modal';
+        modal.innerHTML = `
+            <div class="password-prompt-content">
+                <h3>Enter your password to start chat</h3>
+                <p class="password-prompt-description">Your password is required to decrypt your private key for secure messaging.</p>
+                <input type="password" id="chat-password" placeholder="Enter your password" autocomplete="current-password">
+                <div class="password-prompt-buttons">
+                    <button id="chat-password-cancel" class="cancel-btn">Cancel</button>
+                    <button id="chat-password-submit" class="submit-btn">Submit</button>
+                </div>
+            </div>
+        `;
+
+        // Add styles
+        const style = document.createElement('style');
+        style.textContent = `
+            .password-prompt-modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+                backdrop-filter: blur(5px);
+            }
+            .password-prompt-content {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                width: 400px;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+                animation: slideIn 0.3s ease-out;
+            }
+            @keyframes slideIn {
+                from {
+                    transform: translateY(-50px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+            .password-prompt-content h3 {
+                margin: 0 0 10px 0;
+                color: #333;
+                font-size: 1.5em;
+            }
+            .password-prompt-description {
+                color: #666;
+                margin: 0 0 20px 0;
+                font-size: 0.9em;
+                line-height: 1.4;
+            }
+            .password-prompt-content input {
+                width: 100%;
+                padding: 12px;
+                margin-bottom: 20px;
+                border: 2px solid #ddd;
+                border-radius: 6px;
+                font-size: 1em;
+                transition: border-color 0.3s;
+            }
+            .password-prompt-content input:focus {
+                outline: none;
+                border-color: #4CAF50;
+            }
+            .password-prompt-buttons {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+            }
+            .password-prompt-buttons button {
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 1em;
+                transition: all 0.3s;
+            }
+            .cancel-btn {
+                background: #f0f0f0;
+                color: #666;
+            }
+            .cancel-btn:hover {
+                background: #e0e0e0;
+            }
+            .submit-btn {
+                background: #4CAF50;
+                color: white;
+            }
+            .submit-btn:hover {
+                background: #45a049;
+            }
+            .submit-btn:disabled {
+                background: #cccccc;
+                cursor: not-allowed;
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Add event listeners
+        const cancelBtn = modal.querySelector('#chat-password-cancel');
+        const submitBtn = modal.querySelector('#chat-password-submit');
+        const passwordInput = modal.querySelector('#chat-password');
+
+        // Handle Enter key
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitBtn.click();
+            }
+        });
+
+        // Handle Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                cancelBtn.click();
+            }
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+            document.head.removeChild(style);
+            reject(new Error('Password prompt cancelled'));
+        });
+
+        submitBtn.addEventListener('click', () => {
+            const password = passwordInput.value;
+            if (!password) {
+                passwordInput.style.borderColor = '#ff4444';
+                setTimeout(() => {
+                    passwordInput.style.borderColor = '#ddd';
+                }, 2000);
+                return;
+            }
+            document.body.removeChild(modal);
+            document.head.removeChild(style);
+            resolve(password);
+        });
+
+        // Add to DOM
+        document.body.appendChild(modal);
+        passwordInput.focus();
+    });
 }

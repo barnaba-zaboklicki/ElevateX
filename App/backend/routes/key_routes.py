@@ -1,97 +1,88 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.chat_key import ChatKey
-from models.chat_participant import ChatParticipant
+from models.user import User
+from models.user_key import UserKey
 from database import db
 from datetime import datetime, timezone
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 key_bp = Blueprint('key', __name__)
 
-@key_bp.route('/<int:chat_id>/upload', methods=['POST'])
+@key_bp.route('/user/me', methods=['GET'])
 @jwt_required()
-def upload_key_bundle(chat_id):
-    """Upload a Signal Protocol key bundle for a chat participant."""
-    current_user_id = int(get_jwt_identity())
+def get_current_user_keys():
     try:
-        # Check if user is a participant in this chat
-        participant = ChatParticipant.query.filter_by(
-            chat_id=chat_id,
-            user_id=current_user_id
-        ).first()
+        current_user_id = get_jwt_identity()
+        logger.debug(f"Fetching keys for user ID: {current_user_id}")
         
-        if not participant:
-            return jsonify({'message': 'Unauthorized'}), 403
+        user = User.query.get(current_user_id)
+        if not user:
+            logger.error(f"User not found with ID: {current_user_id}")
+            return jsonify({'error': 'User not found'}), 404
 
-        data = request.get_json()
-        if not data:
-            return jsonify({'message': 'No data provided'}), 400
+        user_key = UserKey.query.filter_by(user_id=current_user_id).first()
+        if not user_key:
+            logger.error(f"User keys not found for user ID: {current_user_id}")
+            return jsonify({'error': 'User keys not found'}), 404
 
-        required_fields = ['registration_id', 'identity_key', 'signed_pre_key', 'signature', 'one_time_pre_keys']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({'message': f'Missing required field: {field}'}), 400
+        logger.debug(f"Successfully retrieved keys for user ID: {current_user_id}")
+        return jsonify({
+            'public_key': user_key.public_key,
+            'encrypted_private_key': user_key.encrypted_private_key
+        }), 200
 
-        # Update or create key bundle
-        chat_key = ChatKey.query.filter_by(chat_id=chat_id, user_id=current_user_id).first()
-        if not chat_key:
-            chat_key = ChatKey(
-                chat_id=chat_id,
-                user_id=current_user_id
-            )
-            db.session.add(chat_key)
+    except Exception as e:
+        logger.error(f"Error fetching user keys: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
-        # Update key bundle
-        chat_key.registration_id = data['registration_id']
-        chat_key.identity_public_key = data['identity_key']
-        chat_key.signed_pre_public_key = data['signed_pre_key']
-        chat_key.signature = data['signature']
-        chat_key.one_time_pre_keys = data['one_time_pre_keys']
-        chat_key.updated_at = datetime.now(timezone.utc)
+@key_bp.route('/user/<int:user_id>/public', methods=['GET'])
+@jwt_required()
+def get_user_public_key(user_id):
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
 
-        db.session.commit()
+        user_key = UserKey.query.filter_by(user_id=user_id).first()
+        if not user_key:
+            return jsonify({'error': 'User keys not found'}), 404
 
         return jsonify({
-            'message': 'Key bundle uploaded successfully'
+            'public_key': user_key.public_key
         }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@key_bp.route('/user/upload', methods=['POST'])
+@jwt_required()
+def upload_user_keys():
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+
+        if not data or 'public_key' not in data or 'encrypted_private_key' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+
+        user_key = UserKey.query.filter_by(user_id=current_user_id).first()
+        if user_key:
+            user_key.public_key = data['public_key']
+            user_key.encrypted_private_key = data['encrypted_private_key']
+            user_key.updated_at = datetime.now(timezone.utc)
+        else:
+            user_key = UserKey(
+                user_id=current_user_id,
+                public_key=data['public_key'],
+                encrypted_private_key=data['encrypted_private_key']
+            )
+            db.session.add(user_key)
+
+        db.session.commit()
+        return jsonify({'message': 'Keys uploaded successfully'}), 200
 
     except Exception as e:
         db.session.rollback()
-        print(f"Error uploading key bundle: {str(e)}")
-        return jsonify({
-            'message': 'Failed to upload key bundle',
-            'error': str(e)
-        }), 500
-
-@key_bp.route('/<int:user_id>/bundle', methods=['GET'])
-@jwt_required()
-def get_key_bundle(user_id):
-    """Get a user's Signal Protocol key bundle."""
-    current_user_id = int(get_jwt_identity())
-    try:
-        # Get the chat key for the requested user
-        chat_key = ChatKey.query.filter_by(user_id=user_id).first()
-        
-        if not chat_key:
-            return jsonify({'message': 'Key bundle not found'}), 404
-
-        # Get a one-time pre-key (and remove it from the available keys)
-        one_time_pre_key = None
-        if chat_key.one_time_pre_keys and len(chat_key.one_time_pre_keys) > 0:
-            one_time_pre_key = chat_key.one_time_pre_keys.pop(0)
-            chat_key.updated_at = datetime.now(timezone.utc)
-            db.session.commit()
-
-        return jsonify({
-            'registration_id': chat_key.registration_id,
-            'identity_key': chat_key.identity_public_key,
-            'signed_pre_key': chat_key.signed_pre_public_key,
-            'signature': chat_key.signature,
-            'one_time_pre_key': one_time_pre_key
-        }), 200
-
-    except Exception as e:
-        print(f"Error fetching key bundle: {str(e)}")
-        return jsonify({
-            'message': 'Failed to fetch key bundle',
-            'error': str(e)
-        }), 500 
+        return jsonify({'error': str(e)}), 500 

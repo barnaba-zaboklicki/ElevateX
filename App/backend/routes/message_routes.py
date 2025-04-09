@@ -59,6 +59,7 @@ def get_chats():
                 'title': chat.title,
                 'other_user_name': other_user_name,
                 'other_user_role': other_participant.role,
+                'other_user_id': other_participant.user_id,
                 'last_message': '[Encrypted message]' if last_message else None,
                 'last_message_at': last_message.created_at.isoformat() if last_message else None
             })
