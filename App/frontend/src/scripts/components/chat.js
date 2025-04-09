@@ -522,6 +522,9 @@ class Chat {
             this.chatId = chatId;
             this.otherUserId = otherUserId;
             
+            // First, render the chat UI so container elements exist
+            this.render();
+            
             // Fetch and decrypt the private key
             await this.fetchAndDecryptPrivateKey();
             
@@ -546,9 +549,6 @@ class Chat {
             
             // Start polling for new messages
             this.startPolling();
-            
-            // Render the chat UI
-            this.render();
             
             this.initialized = true;
             console.log('Chat initialized successfully');
@@ -731,6 +731,17 @@ class Chat {
             }
         });
 
+        // Show loading spinner if no messages are being loaded yet
+        if (this.messages.length === 0) {
+            messagesContainer.innerHTML = `
+                <div class="loading-messages">
+                    <div class="loading-spinner" style="border: 4px solid #dddddd; border-top: 4px solid #ff0000; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px;"></div>
+                    <p>Loading messages...</p>
+                </div>
+            `;
+            return;
+        }
+
         // Create a fingerprint for the private key for verification
         try {
             // We can't export the private key itself, but we can export its public counterpart
@@ -748,30 +759,119 @@ class Chat {
             console.error('Failed to export private key properties:', e);
         }
 
-        // Render each message
+        // For each message, create a placeholder first
         for (const message of this.messages) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${message.is_sender ? 'sent' : 'received'}`;
+            messageElement.setAttribute('data-message-id', message.id || '');
+            
+            // Start with a loading placeholder
+            messageElement.innerHTML = `
+                <div class="message-content loading">
+                    <div class="loading-spinner" style="border: 3px solid #dddddd; border-top: 3px solid #ff0000; border-radius: 50%; width: 15px; height: 15px; display: inline-block; animation: spin 1s linear infinite;"></div>
+                    <p>${message.is_sender ? 'Processing your message...' : 'Decrypting message...'}</p>
+                </div>
+            `;
+            
+            messagesContainer.appendChild(messageElement);
+        }
+
+        // Scroll to bottom to show loading messages
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // Process each message
+        for (let i = 0; i < this.messages.length; i++) {
             try {
+                const message = this.messages[i];
+                const messageEl = messagesContainer.querySelector(`[data-message-id="${message.id || ''}"]`);
+                if (!messageEl) continue;
+                
                 console.log('Processing message:', {
                     messageId: message.id,
                     senderId: message.sender_id,
                     isSender: message.is_sender,
                     currentUserId: currentUserId,
-                    shouldDecrypt: !message.is_sender
+                    hasContent: !!message.content,
+                    hasSelfEncrypted: !!message.self_encrypted_content,
+                    contentLength: message.content ? message.content.length : 0,
+                    shouldDecrypt: true
                 });
 
                 let messageContent;
                 
-                // For messages sent by the current user, just display the original content
+                // For messages sent by the current user
                 if (message.is_sender) {
-                    // Extract the original content if available
+                    // First try to use the original content if available in memory
                     if (message.content) {
                         messageContent = message.content;
-                    } else {
-                        // For messages that don't have original content stored
-                        messageContent = "Your message (encrypted)";
+                        console.log('Using stored original content for sent message');
+                    } 
+                    // Next try to decrypt using self-encrypted version
+                    else if (message.self_encrypted_content) {
+                        console.log('Attempting to decrypt self-encrypted message');
+                        try {
+                            let encryptedData;
+                            
+                            // Parse the self-encrypted content
+                            try {
+                                encryptedData = JSON.parse(message.self_encrypted_content);
+                                console.log('Parsed self-encrypted data:', {
+                                    keyLength: encryptedData.encrypted_key.length,
+                                    contentLength: encryptedData.encrypted_content.length,
+                                    hasIv: !!encryptedData.iv
+                                });
+                            } catch (parseError) {
+                                console.error('Error parsing self-encrypted content:', parseError);
+                                throw new Error('Invalid message format');
+                            }
+                            
+                            // Ensure we have all required fields
+                            if (!encryptedData.encrypted_key || !encryptedData.encrypted_content) {
+                                console.error('Missing required fields in self-encrypted data');
+                                throw new Error('Missing required fields in encrypted data');
+                            }
+                            
+                            // Convert IV from base64 to Uint8Array if needed
+                            if (encryptedData.iv && typeof encryptedData.iv === 'string') {
+                                try {
+                                    encryptedData.iv = CryptoUtils.base64ToArrayBuffer(encryptedData.iv);
+                                } catch (ivError) {
+                                    console.error('Error converting IV from base64:', ivError);
+                                    encryptedData.iv = new Uint8Array(12);
+                                }
+                            }
+                            
+                            // Decrypt using your private key
+                            messageContent = await CryptoUtils.decryptMessage(
+                                encryptedData,
+                                this.privateKey
+                            );
+                            
+                            console.log('Successfully decrypted self-encrypted message');
+                        } catch (decryptError) {
+                            console.error('Failed to decrypt self-encrypted message:', decryptError);
+                            messageContent = "[Your encrypted message]";
+                        }
+                    }
+                    // Fall back to placeholder message
+                    else {
+                        messageContent = "[Your encrypted message]";
+                        console.log('No decryptable content available for sent message');
                     }
                     
-                    console.log('Message was sent by current user, no decryption needed');
+                    // Update the message element
+                    if (messageEl) {
+                        const isDecrypted = message.content || (message.self_encrypted_content && messageContent !== "[Your encrypted message]");
+                        messageEl.innerHTML = `
+                            <div class="message-content sent-message">
+                                <p>${this.escapeHtml(messageContent)}</p>
+                                <small>${new Date(message.created_at).toLocaleString()}</small>
+                                ${isDecrypted ? '' : '<span class="encryption-note">⚠️ Original content not available</span>'}
+                            </div>
+                        `;
+                    }
+                    
+                    console.log('Message was sent by current user, displaying appropriate content');
                 } else {
                     // Only decrypt messages received from others
                     let encryptedData;
@@ -886,33 +986,64 @@ class Chat {
                         encryptedData,
                         this.privateKey
                     );
+                    
+                    // Update the message element with the decrypted content
+                    if (messageEl) {
+                        messageEl.innerHTML = `
+                            <div class="message-content received-message">
+                                <p>${this.escapeHtml(messageContent)}</p>
+                                <small>${new Date(message.created_at).toLocaleString()}</small>
+                            </div>
+                        `;
+                    }
                 }
-
-                const messageElement = document.createElement('div');
-                messageElement.className = `message ${message.is_sender ? 'sent' : 'received'}`;
-                messageElement.innerHTML = `
-                    <div class="message-content">
-                        <p>${this.escapeHtml(messageContent)}</p>
-                        <small>${new Date(message.created_at).toLocaleString()}</small>
-                    </div>
-                `;
-                messagesContainer.appendChild(messageElement);
             } catch (error) {
-                console.error('Error decrypting message:', error);
-                const messageElement = document.createElement('div');
-                messageElement.className = `message ${message.is_sender ? 'sent' : 'received'}`;
-                messageElement.innerHTML = `
-                    <div class="message-content error">
-                        <p>Failed to decrypt message: ${error.message}</p>
-                        <small>${new Date(message.created_at).toLocaleString()}</small>
-                    </div>
-                `;
-                messagesContainer.appendChild(messageElement);
+                console.error('Error processing message:', error);
+                const messageEl = messagesContainer.querySelector(`[data-message-id="${this.messages[i].id || ''}"]`);
+                if (messageEl) {
+                    const message = this.messages[i];
+                    const errorMessage = message.is_sender 
+                        ? 'This message was encrypted for the recipient and cannot be viewed'
+                        : `Failed to decrypt message: ${error.message}`;
+                    
+                    messageEl.innerHTML = `
+                        <div class="message-content ${message.is_sender ? 'encrypted-sender' : 'error'}">
+                            <p>${errorMessage}</p>
+                            <small>${new Date(message.created_at).toLocaleString()}</small>
+                        </div>
+                    `;
+                }
             }
         }
 
-        // Scroll to bottom
+        // Scroll to bottom after all messages are processed
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        
+        // Add CSS for the encryption note
+        if (!document.getElementById('chat-encryption-styles')) {
+            const style = document.createElement('style');
+            style.id = 'chat-encryption-styles';
+            style.textContent = `
+                .encryption-note {
+                    display: block;
+                    font-size: 0.8em;
+                    color: #888;
+                    margin-top: 5px;
+                    font-style: italic;
+                }
+                
+                .message-content.encrypted-sender {
+                    background-color: #ffefef;
+                    border-left: 3px solid #ffaaaa;
+                }
+                
+                .message-content.encrypted-sender p {
+                    color: #666;
+                    font-style: italic;
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
 
     escapeHtml(unsafe) {
@@ -946,6 +1077,7 @@ class Chat {
                 if (tokenParts.length === 3) {
                     const payload = JSON.parse(atob(tokenParts[1]));
                     currentUserId = payload.sub || payload.user_id;
+                    console.log('Current user ID from token (sender):', currentUserId);
                 }
             } catch (err) {
                 console.error('Error parsing token:', err);
@@ -979,13 +1111,57 @@ class Chat {
                 console.error('Failed to generate key fingerprint:', e);
             }
 
-            // Encrypt the message
-            const encryptedData = await CryptoUtils.encryptMessage(content, this.otherUserPublicKey);
-            console.log('Message encrypted successfully with other user\'s public key:', {
-                encryptedKeyLength: encryptedData.encrypted_key.length,
-                encryptedContentLength: encryptedData.encrypted_content.length,
-                ivLength: encryptedData.iv.length
+            // STEP 1: Encrypt the message for the recipient using their public key
+            const encryptedForRecipient = await CryptoUtils.encryptMessage(content, this.otherUserPublicKey);
+            console.log('Message encrypted successfully for recipient:', {
+                encryptedKeyLength: encryptedForRecipient.encrypted_key.length,
+                encryptedContentLength: encryptedForRecipient.encrypted_content.length,
+                ivLength: encryptedForRecipient.iv.length
             });
+
+            // STEP 2: Fetch your own public key to encrypt a version for yourself
+            console.log('Fetching own public key to encrypt message for self...');
+            let encryptedForSelf = null;
+            let myPublicKey = null;
+            
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    throw new Error('No access token found');
+                }
+                
+                const response = await fetch('https://127.0.0.1:5000/api/keys/user/me', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch own public key: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                if (!data.public_key) {
+                    throw new Error('No public key found in response');
+                }
+                
+                // Import your own public key
+                myPublicKey = await this.importPublicKey(data.public_key);
+                console.log('Successfully imported own public key for self-encryption');
+                
+                // Encrypt the message for yourself using your public key
+                encryptedForSelf = await CryptoUtils.encryptMessage(content, myPublicKey);
+                console.log('Message encrypted successfully for self:', {
+                    encryptedKeyLength: encryptedForSelf.encrypted_key.length,
+                    encryptedContentLength: encryptedForSelf.encrypted_content.length,
+                    ivLength: encryptedForSelf.iv.length
+                });
+            } catch (e) {
+                console.error('Failed to encrypt message for self:', e);
+                // Continue even if self-encryption fails - not critical
+            }
 
             // Get access token
             const token = localStorage.getItem('token');
@@ -993,7 +1169,20 @@ class Chat {
                 throw new Error('No access token found');
             }
 
-            // Send the encrypted message
+            // STEP 3: Create the final message structure with both encrypted versions
+            // For the backend S3 storage, we need to structure the message differently
+            // Since the backend expects a single encrypted_content string
+            
+            // Create a combined payload that includes both encrypted versions
+            const combinedPayload = {
+                recipient_encrypted: encryptedForRecipient,
+                self_encrypted: encryptedForSelf
+            };
+            
+            // Convert to string for the API
+            const combinedPayloadString = JSON.stringify(combinedPayload);
+            
+            // Send the encrypted message with combined payload
             const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/send`, {
                 method: 'POST',
                 headers: {
@@ -1001,7 +1190,7 @@ class Chat {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    encrypted_content: JSON.stringify(encryptedData)
+                    encrypted_content: combinedPayloadString
                 })
             });
 
@@ -1011,17 +1200,19 @@ class Chat {
 
             const data = await response.json();
             console.log('Message sent successfully:', {
-                messageId: data.id,
-                encryptedContentType: typeof data.encrypted_content,
-                encryptedContentLength: data.encrypted_content ? data.encrypted_content.length : 0
+                messageId: data.message.id,
+                s3Key: data.message.s3_key,
+                hasSelfEncryptedVersion: !!encryptedForSelf
             });
 
-            // Add the sent message to the local messages array
+            // Add the sent message to the local messages array with the original content
+            // This will only be available in the current session
             this.messages.push({
-                id: data.id,
-                content: content,
-                encrypted_content: JSON.stringify(encryptedData),
-                created_at: new Date().toISOString(),
+                id: data.message.id,
+                content: content,  // Original content stored in memory only for this session
+                encrypted_content: JSON.stringify(encryptedForRecipient),
+                self_encrypted_content: encryptedForSelf ? JSON.stringify(encryptedForSelf) : null,
+                created_at: data.message.created_at,
                 is_sender: true,
                 sender_id: this.userId || currentUserId
             });
@@ -1144,6 +1335,19 @@ class Chat {
                 throw new Error('You must be logged in to load messages');
             }
 
+            // Get current user ID from token for verification
+            let currentUserId = null;
+            try {
+                const tokenParts = token.split('.');
+                if (tokenParts.length === 3) {
+                    const payload = JSON.parse(atob(tokenParts[1]));
+                    currentUserId = payload.sub || payload.user_id;
+                    console.log('Current user ID from messages:', currentUserId);
+                }
+            } catch (err) {
+                console.error('Error parsing token:', err);
+            }
+
             // Get messages for this chat
             const response = await fetch(`https://127.0.0.1:5000/api/messages/${this.chatId}/messages`, {
                 headers: {
@@ -1158,13 +1362,72 @@ class Chat {
             }
 
             const data = await response.json();
-            console.log('Received messages:', data);
+            console.log('Received messages from server:', data);
 
-            // Store messages
-            this.messages = data.messages.map(msg => ({
-                ...msg,
-                decrypted_content: null // Will be decrypted on demand
+            // Process each message to extract both encrypted versions
+            const processedMessages = await Promise.all(data.messages.map(async msg => {
+                // Check if this is a sent message (by comparing sender_id)
+                const isSender = msg.sender_id === currentUserId || msg.is_sender;
+                
+                // Initialize content to null
+                let content = null;
+                let recipientEncrypted = null;
+                let selfEncrypted = null;
+                
+                // Try to parse the message payload for both encrypted versions
+                try {
+                    // Handle different possible formats
+                    if (msg.encrypted_content) {
+                        try {
+                            // Try parsing as a combined payload first (new format)
+                            const parsedPayload = JSON.parse(msg.encrypted_content);
+                            
+                            if (parsedPayload.recipient_encrypted && parsedPayload.self_encrypted) {
+                                // This is the new dual-encryption format
+                                console.log(`Message ${msg.id} uses dual-encryption format`);
+                                recipientEncrypted = parsedPayload.recipient_encrypted;
+                                selfEncrypted = parsedPayload.self_encrypted;
+                            } else if (isSender && parsedPayload.self_encrypted) {
+                                // This has only self-encrypted content
+                                console.log(`Message ${msg.id} has only self-encrypted content`);
+                                selfEncrypted = parsedPayload.self_encrypted;
+                                recipientEncrypted = msg.encrypted_content; // Use the original as fallback
+                            } else {
+                                // This is a regular encrypted message or another format
+                                console.log(`Message ${msg.id} uses regular encryption format`);
+                                recipientEncrypted = parsedPayload;
+                            }
+                        } catch (parseError) {
+                            // If parsing fails, it's likely an old format message
+                            console.log(`Message ${msg.id} uses old encryption format`);
+                            recipientEncrypted = msg.encrypted_content;
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Error processing message ${msg.id}:`, e);
+                    recipientEncrypted = msg.encrypted_content; // Use original as fallback
+                }
+                
+                console.log(`Processed message ${msg.id}:`, {
+                    senderId: msg.sender_id,
+                    currentUserId: currentUserId,
+                    isSender: isSender,
+                    hasRecipientEncrypted: !!recipientEncrypted,
+                    hasSelfEncrypted: !!selfEncrypted
+                });
+                
+                return {
+                    ...msg,
+                    is_sender: isSender,
+                    content: null, // No cached content from sessionStorage
+                    encrypted_content: recipientEncrypted ? (typeof recipientEncrypted === 'string' ? recipientEncrypted : JSON.stringify(recipientEncrypted)) : msg.encrypted_content,
+                    self_encrypted_content: selfEncrypted ? (typeof selfEncrypted === 'string' ? selfEncrypted : JSON.stringify(selfEncrypted)) : null,
+                    decrypted_content: null // Will be handled during rendering
+                };
             }));
+
+            // Store the processed messages
+            this.messages = processedMessages;
 
             // Render messages
             await this.renderMessages();
@@ -1194,7 +1457,12 @@ class Chat {
                 <h3>${this.escapeHtml(this.inventorName)}</h3>
                 <p>Invention: ${this.escapeHtml(this.inventionTitle)}</p>
             </div>
-            <div class="chat-messages"></div>
+            <div class="chat-messages">
+                <div class="loading-messages">
+                    <div class="loading-spinner" style="border: 4px solid #dddddd; border-top: 4px solid #ff0000; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px;"></div>
+                    <p>Loading messages...</p>
+                </div>
+            </div>
             <div class="chat-input">
                 <textarea placeholder="Type your message..." rows="3"></textarea>
                 <button class="send-button">Send</button>
@@ -1203,6 +1471,33 @@ class Chat {
 
         // Add the chat UI to the container
         this.container.appendChild(chatUI);
+
+        // Add CSS for the loading spinner
+        if (!document.getElementById('chat-loading-styles')) {
+            const style = document.createElement('style');
+            style.id = 'chat-loading-styles';
+            style.textContent = `
+                .loading-messages {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 200px;
+                    color: #666;
+                }
+                
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                
+                .message-content.loading {
+                    background-color: #f8f9fc;
+                    color: #666;
+                }
+            `;
+            document.head.appendChild(style);
+        }
 
         // Add event listeners
         const sendButton = chatUI.querySelector('.send-button');

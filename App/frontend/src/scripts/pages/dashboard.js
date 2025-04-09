@@ -740,6 +740,129 @@ function createPasswordConfirmationModal() {
                 </div>
             </div>
         </div>
+        <style>
+            .modal {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.85);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+                backdrop-filter: blur(5px);
+            }
+            .modal-content {
+                background: #121212;
+                padding: 30px;
+                border-radius: 12px;
+                width: 400px;
+                border: 1px solid rgb(136, 135, 135);
+                box-shadow: 0 0 30px rgba(240, 234, 233, 0.4);
+                animation: slideIn 0.3s ease-out;
+                font-family: Poppins, sans-serif;
+            }
+            @keyframes slideIn {
+                from {
+                    transform: translateY(-30px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+            .modal-header {
+                margin-bottom: 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .modal-title {
+                margin: 0;
+                color: #ffffff;
+                font-size: 1.5em;
+                font-weight: 600;
+            }
+            .modal-close {
+                background: none;
+                border: none;
+                color: #e6e6ef;
+                font-size: 1.5rem;
+                cursor: pointer;
+                padding: 0;
+                line-height: 1;
+            }
+            .modal-body p {
+                color: #b0b3c1;
+                margin: 0 0 20px 0;
+                font-size: 0.9em;
+                line-height: 1.5;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                color: #e6e6ef;
+                font-size: 0.9em;
+            }
+            .form-group input[type="password"] {
+                width: 100%;
+                padding: 12px;
+                border: 1px solid #ff4a2a !important;
+                background-color: #1e1e1e;
+                color: white;
+                border-radius: 8px;
+                font-size: 1em;
+                box-sizing: border-box;
+                transition: box-shadow 0.3s ease;
+            }
+            .form-group input[type="password"]:focus {
+                outline: none !important;
+                box-shadow: 0 0 0 3px rgba(255, 74, 42, 0.4) !important;
+            }
+            .modal-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 12px;
+                margin-top: 20px;
+            }
+            .modal-actions button {
+                padding: 10px 20px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 0.9em;
+                font-weight: 500;
+                transition: all 0.2s;
+                font-family: Poppins, sans-serif;
+            }
+            .modal-actions .cancel-btn {
+                background: #2a2a2a;
+                color: #e6e6ef;
+                border: 1px solid #42434a;
+            }
+            .modal-actions .cancel-btn:hover {
+                background: #333;
+            }
+            .modal-actions .confirm-btn {
+                background: #ff4a2a !important;
+                color: white !important;
+            }
+            .modal-actions .confirm-btn:hover {
+                background: #e13a1a !important;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 5px rgba(255, 74, 42, 0.4);
+            }
+            .modal-actions .confirm-btn:active {
+                transform: translateY(0);
+                box-shadow: none;
+            }
+        </style>
     `;
 }
 
@@ -2322,7 +2445,7 @@ async function promptForPassword() {
             </div>
         `;
 
-        // Add styles
+        // Add styles with !important to override any other styles
         const style = document.createElement('style');
         style.textContent = `
             .password-prompt-modal {
@@ -2331,7 +2454,7 @@ async function promptForPassword() {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.7);
+                background: rgba(0, 0, 0, 0.85);
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -2339,16 +2462,18 @@ async function promptForPassword() {
                 backdrop-filter: blur(5px);
             }
             .password-prompt-content {
-                background: white;
+                background: #121212;
                 padding: 30px;
                 border-radius: 12px;
                 width: 400px;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+                border: 1px solid rgb(136, 135, 135);
+                box-shadow: 0 0 30px rgba(240, 234, 233, 0.4);
                 animation: slideIn 0.3s ease-out;
+                font-family: Poppins, sans-serif;
             }
             @keyframes slideIn {
                 from {
-                    transform: translateY(-50px);
+                    transform: translateY(-30px);
                     opacity: 0;
                 }
                 to {
@@ -2358,58 +2483,70 @@ async function promptForPassword() {
             }
             .password-prompt-content h3 {
                 margin: 0 0 10px 0;
-                color: #333;
+                color: #ffffff;
                 font-size: 1.5em;
+                font-weight: 600;
             }
             .password-prompt-description {
-                color: #666;
+                color: #b0b3c1;
                 margin: 0 0 20px 0;
                 font-size: 0.9em;
-                line-height: 1.4;
+                line-height: 1.5;
             }
             .password-prompt-content input {
                 width: 100%;
                 padding: 12px;
                 margin-bottom: 20px;
-                border: 2px solid #ddd;
-                border-radius: 6px;
+                border: 1px solid #ff4a2a !important;
+                background-color: #1e1e1e;
+                color: white;
+                border-radius: 8px;
                 font-size: 1em;
-                transition: border-color 0.3s;
+                box-sizing: border-box;
+                transition: box-shadow 0.3s ease;
             }
             .password-prompt-content input:focus {
-                outline: none;
-                border-color: #4CAF50;
+                outline: none !important;
+                
+            }
+            .password-prompt-content input::placeholder {
+                color: #6b7280;
             }
             .password-prompt-buttons {
                 display: flex;
                 justify-content: flex-end;
-                gap: 10px;
+                gap: 12px;
             }
             .password-prompt-buttons button {
                 padding: 10px 20px;
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
                 cursor: pointer;
-                font-size: 1em;
-                transition: all 0.3s;
+                font-size: 0.9em;
+                font-weight: 500;
+                transition: all 0.2s;
+                font-family: Poppins, sans-serif;
             }
-            .cancel-btn {
-                background: #f0f0f0;
-                color: #666;
+            #chat-password-cancel {
+                background: #2a2a2a;
+                color: #e6e6ef;
+                border: 1px solid #42434a;
             }
-            .cancel-btn:hover {
-                background: #e0e0e0;
+            #chat-password-cancel:hover {
+                background: #333;
             }
-            .submit-btn {
-                background: #4CAF50;
-                color: white;
+            #chat-password-submit {
+                background: #ff4a2a !important;
+                color: white !important;
             }
-            .submit-btn:hover {
-                background: #45a049;
+            #chat-password-submit:hover {
+                background: #e13a1a !important;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 5px rgba(255, 74, 42, 0.4);
             }
-            .submit-btn:disabled {
-                background: #cccccc;
-                cursor: not-allowed;
+            #chat-password-submit:active {
+                transform: translateY(0);
+                box-shadow: none;
             }
         `;
         document.head.appendChild(style);
@@ -2442,9 +2579,9 @@ async function promptForPassword() {
         submitBtn.addEventListener('click', () => {
             const password = passwordInput.value;
             if (!password) {
-                passwordInput.style.borderColor = '#ff4444';
+                passwordInput.style.borderColor = '#ff4444 !important';
                 setTimeout(() => {
-                    passwordInput.style.borderColor = '#ddd';
+                    passwordInput.style.borderColor = '#ff4a2a !important';
                 }, 2000);
                 return;
             }
