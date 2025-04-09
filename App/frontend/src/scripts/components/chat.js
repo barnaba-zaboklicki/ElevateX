@@ -147,7 +147,7 @@ class CryptoUtils {
             console.log('DECRYPTION PROCESS: Starting decryption with:', {
                 keyLength: encryptedData.encrypted_key.length,
                 contentLength: encryptedData.encrypted_content.length,
-                ivLength: encryptedData.iv ? (encryptedData.iv.byteLength || encryptedData.iv.length) : 0,
+                ivLength: encryptedData.iv ? (typeof encryptedData.iv === 'string' ? encryptedData.iv.length : encryptedData.iv.byteLength) : 0,
                 privateKeyType: privateKey.type,
                 privateKeyAlgorithm: privateKey.algorithm.name,
                 privateKeyExtractable: privateKey.extractable,
@@ -240,14 +240,25 @@ class CryptoUtils {
             // Ensure IV is a Uint8Array
             let iv;
             try {
-                iv = encryptedData.iv instanceof Uint8Array ? 
-                    encryptedData.iv : 
-                    this.base64ToArrayBuffer(encryptedData.iv);
+                // Check if iv is already an ArrayBuffer or Uint8Array
+                if (encryptedData.iv instanceof ArrayBuffer || encryptedData.iv instanceof Uint8Array) {
+                    iv = encryptedData.iv;
+                    console.log('Using provided ArrayBuffer IV');
+                } else if (typeof encryptedData.iv === 'string') {
+                    // Convert from base64 string
+                    iv = this.base64ToArrayBuffer(encryptedData.iv);
+                    console.log('Converted IV from base64 string to ArrayBuffer');
+                } else {
+                    console.error('Invalid IV format:', typeof encryptedData.iv);
+                    // Fallback to a fixed IV (not secure but allows decryption to attempt to proceed)
+                    iv = new Uint8Array(12);
+                    console.warn('Using fallback fixed IV');
+                }
 
                 console.log('Using IV:', {
                     type: iv.constructor.name,
                     length: iv.byteLength,
-                    firstBytes: Array.from(new Uint8Array(iv).slice(0, 4))
+                    firstBytes: Array.from(new Uint8Array(iv instanceof ArrayBuffer ? iv : iv.buffer).slice(0, 4))
                 });
             } catch (error) {
                 console.error('IV processing failed:', error);
