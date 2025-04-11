@@ -1333,44 +1333,305 @@ async function handleMenuClick(menuId, chatId = null) {
     if (menuId === 'home') {
         // Load default dashboard content
         loadDashboardContent(user.role);
-    } else if (menuId === 'messages') {
+    } else if (menuId === 'security') {
         try {
-            // Prompt for password first
-            const password = await promptForPassword();
-            if (!password) {
-                throw new Error('Password is required to access messages');
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to view security logs');
             }
 
-            // Get the password hash from the server
-            const token = localStorage.getItem('token');
-            const hashResponse = await fetch('https://127.0.0.1:5000/api/auth/password-hash', {
-                method: 'POST',
+            // Fetch security logs
+            const response = await fetch('https://127.0.0.1:5000/api/admin/security-logs', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ password }),
-                credentials: 'include'
+                    'Accept': 'application/json'
+                }
             });
 
-            if (!hashResponse.ok) {
-                throw new Error('Failed to get password hash');
+            if (!response.ok) {
+                throw new Error('Failed to fetch security logs');
             }
 
-            const { password_hash } = await hashResponse.json();
+            const data = await response.json();
             
-            // Store the password hash temporarily
-            localStorage.setItem('password_hash', password_hash);
+            // Check if we have logs data
+            if (!data.logs || !Array.isArray(data.logs)) {
+                throw new Error('Invalid response format from server');
+            }
 
+            const logs = data.logs;
+
+            // Create HTML for security logs
             contentDiv.innerHTML = `
                 <div class="welcome-section">
-                    <h1>Welcome, ${user.first_name}!</h1>
+                    <h1>Security Logs</h1>
                     <h2>${roleConfigs[user.role].title}</h2>
                 </div>
                 <div class="dashboard-sections">
                     <div class="container">
-                        <h2>Messages</h2>
-                        <div class="messages-container">
+                        <div class="security-logs-container">
+                            <div class="filters">
+                                <div class="filter-group">
+                                    <label for="eventTypeFilter">Event Type</label>
+                                    <select id="eventTypeFilter">
+                                        <option value="">All Event Types</option>
+                                        <option value="login_attempt">Login Attempts</option>
+                                        <option value="account_lock">Account Locks</option>
+                                        <option value="document_access">Document Access</option>
+                                        <option value="document_upload">Document Upload</option>
+                                        <option value="document_delete">Document Delete</option>
+                                        <option value="password_change">Password Changes</option>
+                                        <option value="role_change">Role Changes</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label for="statusFilter">Status</label>
+                                    <select id="statusFilter">
+                                        <option value="">All Statuses</option>
+                                        <option value="success">Success</option>
+                                        <option value="failure">Failure</option>
+                                        <option value="warning">Warning</option>
+                                    </select>
+                                </div>
+                                <div class="filter-group">
+                                    <label for="startDateFilter">Start Date</label>
+                                    <input type="date" id="startDateFilter" class="date-input">
+                                </div>
+                                <div class="filter-group">
+                                    <label for="endDateFilter">End Date</label>
+                                    <input type="date" id="endDateFilter" class="date-input">
+                                </div>
+                                <button id="applyFilters" class="filter-button">Apply Filters</button>
+                            </div>
+                            <div class="logs-table">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Event Type</th>
+                                            <th>User ID</th>
+                                            <th>IP Address</th>
+                                            <th>Status</th>
+                                            <th>Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="logsTableBody">
+                                        ${logs.length > 0 ? logs.map(log => {
+                                            let details = log.details || 'N/A';
+                                            const rowClass = log.status === 'warning' ? 'warning-row' : 
+                                                           log.status === 'success' ? 'success-row' : 
+                                                           log.status === 'failure' ? 'failure-row' : '';
+                                            return `
+                                                <tr class="${rowClass}">
+                                                    <td>${new Date(log.timestamp).toLocaleString()}</td>
+                                                    <td>${log.event_type}</td>
+                                                    <td>${log.user_id || 'N/A'}</td>
+                                                    <td>${log.ip_address || 'N/A'}</td>
+                                                    <td class="status-${log.status}">${log.status}</td>
+                                                    <td>${details}</td>
+                                                </tr>
+                                            `;
+                                        }).join('') : '<tr><td colspan="6" class="no-logs">No security logs found</td></tr>'}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    .security-logs-container {
+                        background: #1e1e1e;
+                        border-radius: 8px;
+                        padding: 20px;
+                        margin-top: 20px;
+                    }
+                    .filters {
+                        display: flex;
+                        gap: 15px;
+                        flex-wrap: wrap;
+                        margin-bottom: 20px;
+                        padding: 15px;
+                        background: #2a2a2a;
+                        border-radius: 6px;
+                    }
+                    .filter-group {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 5px;
+                    }
+                    .filter-group label {
+                        color: #e6e6ef;
+                        font-size: 0.9em;
+                    }
+                    .filter-group select, .filter-group input {
+                        padding: 8px 12px;
+                        border: 1px solid #42434a;
+                        background: #1e1e1e;
+                        color: white;
+                        border-radius: 4px;
+                        min-width: 150px;
+                    }
+                    .filter-button {
+                        padding: 8px 20px;
+                        background: #ff4a2a;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        align-self: flex-end;
+                        margin-top: 22px;
+                    }
+                    .filter-button:hover {
+                        background: #e13a1a;
+                    }
+                    .logs-table {
+                        overflow-x: auto;
+                    }
+                    .logs-table table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    .logs-table th {
+                        background: #2a2a2a;
+                        color: #e6e6ef;
+                        padding: 12px;
+                        text-align: left;
+                    }
+                    .logs-table td {
+                        padding: 12px;
+                        border-bottom: 1px solid #42434a;
+                        color: #b0b3c1;
+                    }
+                    .logs-table tr:hover {
+                        background: #2a2a2a;
+                    }
+                    .status-success {
+                        color: #28a745;
+                        font-weight: bold;
+                    }
+                    .status-failure {
+                        color: #fd7e14;
+                        font-weight: bold;
+                    }
+                    .status-warning {
+                        color: #dc3545;
+                        font-weight: bold;
+                    }
+                    .logs-table tr.success-row {
+                        border-left: 4px solid #28a745;
+                        background-color: rgba(40, 167, 69, 0.05);
+                    }
+                    .logs-table tr.failure-row {
+                        border-left: 4px solid #fd7e14;
+                        background-color: rgba(253, 126, 20, 0.05);
+                    }
+                    .logs-table tr.warning-row {
+                        border-left: 4px solid #dc3545;
+                        background-color: rgba(220, 53, 69, 0.05);
+                    }
+                    .no-logs {
+                        text-align: center;
+                        color: #6c757d;
+                        padding: 20px;
+                    }
+                </style>
+            `;
+
+            // Add event listeners for filters
+            document.getElementById('applyFilters').addEventListener('click', async () => {
+                const eventType = document.getElementById('eventTypeFilter').value;
+                const status = document.getElementById('statusFilter').value;
+                const startDate = document.getElementById('startDateFilter').value;
+                const endDate = document.getElementById('endDateFilter').value;
+
+                const queryParams = new URLSearchParams();
+                if (eventType) queryParams.append('event_type', eventType);
+                if (status) queryParams.append('status', status);
+                if (startDate) queryParams.append('start_date', startDate);
+                if (endDate) queryParams.append('end_date', endDate);
+
+                const filteredResponse = await fetch(`https://127.0.0.1:5000/api/admin/security-logs?${queryParams.toString()}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!filteredResponse.ok) {
+                    throw new Error('Failed to fetch filtered security logs');
+                }
+
+                const filteredData = await filteredResponse.json();
+                
+                // Check if we have filtered logs data
+                if (!filteredData.logs || !Array.isArray(filteredData.logs)) {
+                    throw new Error('Invalid response format from server');
+                }
+
+                const filteredLogs = filteredData.logs;
+
+                document.getElementById('logsTableBody').innerHTML = filteredLogs.length > 0 ? filteredLogs.map(log => `
+                    <tr class="${log.status === 'warning' ? 'warning-row' : log.status === 'success' ? 'success-row' : log.status === 'failure' ? 'failure-row' : ''}">
+                        <td>${new Date(log.timestamp).toLocaleString()}</td>
+                        <td>${log.event_type}</td>
+                        <td>${log.user_id || 'N/A'}</td>
+                        <td>${log.ip_address || 'N/A'}</td>
+                        <td class="status-${log.status}">${log.status}</td>
+                        <td>${log.details || 'N/A'}</td>
+                    </tr>
+                `).join('') : '<tr><td colspan="6" class="no-logs">No security logs found</td></tr>';
+            });
+
+        } catch (error) {
+            console.error('Error loading security logs:', error);
+            contentDiv.innerHTML = `
+                <div class="error-message">
+                    <h2>Error Loading Security Logs</h2>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        }
+    } else if (menuId === 'messages') {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('You must be logged in to view messages');
+            }
+
+            // First, ensure chat component is loaded
+            const chatLoaded = await loadChatComponent();
+            if (!chatLoaded) {
+                throw new Error('Failed to load chat component');
+            }
+
+            // Prompt for password before proceeding
+            try {
+                const password = await promptForPassword();
+                if (!password) {
+                    throw new Error('Password is required to access messages');
+                }
+
+                // Fetch messages
+                const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch messages');
+                }
+
+                const data = await response.json();
+                console.log('Received messages:', data);
+
+                // Create messages container if it doesn't exist
+                let messagesContainer = document.getElementById('messages-container');
+                if (!messagesContainer) {
+                    contentDiv.innerHTML = `
+                        <div class="messages-container" id="messages-container">
                             <div class="messages-sidebar">
                                 <div class="messages-list" id="messages-list">
                                     <div class="loading">Loading messages...</div>
@@ -1384,88 +1645,88 @@ async function handleMenuClick(menuId, chatId = null) {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            `;
+                    `;
+                }
 
-            if (!token) {
-                throw new Error('You must be logged in to view messages');
-            }
+                const messagesList = document.getElementById('messages-list');
+                if (!messagesList) {
+                    throw new Error('Messages list element not found');
+                }
 
-            console.log('Fetching messages with token:', token);
-            const response = await fetch('https://127.0.0.1:5000/api/messages/chats', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/json'
-                },
-                credentials: 'include'
-            });
+                if (data.chats && data.chats.length > 0) {
+                    messagesList.innerHTML = data.chats.map(chat => `
+                        <div class="chat-item" data-chat-id="${chat.id}" data-other-user-id="${chat.other_user_id}">
+                            <h4>${chat.title}</h4>
+                            <p>${chat.other_user_name} (${chat.other_user_role})</p>
+                            <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
+                        </div>
+                    `).join('');
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch messages');
-            }
-
-            const data = await response.json();
-            console.log('Received messages:', data);
-            console.log('Chat data structure:', {
-                chats: data.chats.map(chat => ({
-                    id: chat.id,
-                    other_user_id: chat.other_user_id,
-                    title: chat.title,
-                    other_user_name: chat.other_user_name,
-                    other_user_role: chat.other_user_role
-                }))
-            });
-
-            const messagesList = document.getElementById('messages-list');
-            
-            if (data.chats && data.chats.length > 0) {
-                messagesList.innerHTML = data.chats.map(chat => `
-                    <div class="chat-item" data-chat-id="${chat.id}" data-other-user-id="${chat.other_user_id}">
-                        <h4>${chat.title}</h4>
-                        <p>${chat.other_user_name} (${chat.other_user_role})</p>
-                        <small>${chat.last_message_at ? new Date(chat.last_message_at).toLocaleString() : 'No messages yet'}</small>
-                    </div>
-                `).join('');
-
-                // Add click handlers to chat items
-                document.querySelectorAll('.chat-item').forEach(item => {
-                    item.addEventListener('click', async () => {
-                        const chatId = item.getAttribute('data-chat-id');
-                        const otherUserId = item.getAttribute('data-other-user-id');
-                        
-                        console.log('Chat clicked:', { 
-                            chatId, 
-                            otherUserId,
-                            dataset: item.dataset,
-                            attributes: {
-                                chatId: item.getAttribute('data-chat-id'),
-                                otherUserId: item.getAttribute('data-other-user-id')
+                    // Add click handlers to chat items
+                    document.querySelectorAll('.chat-item').forEach(item => {
+                        item.addEventListener('click', async () => {
+                            const chatId = item.getAttribute('data-chat-id');
+                            const otherUserId = item.getAttribute('data-other-user-id');
+                            
+                            if (!chatId || !otherUserId) {
+                                console.error('Missing required chat data:', { chatId, otherUserId });
+                                return;
                             }
+                            
+                            // Clear the placeholder and set up chat UI
+                            const chatContainer = document.getElementById('chat-container');
+                            if (!chatContainer) {
+                                throw new Error('Chat container not found');
+                            }
+
+                            chatContainer.innerHTML = `
+                                <div class="chat-messages"></div>
+                                <div class="chat-input">
+                                    <textarea placeholder="Type your message..." rows="3"></textarea>
+                                    <button class="send-button">Send</button>
+                                </div>
+                            `;
+                            
+                            // Initialize the chat with the password
+                            const chat = new Chat('chat-container');
+                            
+                            // Get the password hash from the server
+                            try {
+                                const response = await fetch('https://127.0.0.1:5000/api/auth/password-hash', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Authorization': `Bearer ${token}`,
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ password: password })
+                                });
+
+                                if (!response.ok) {
+                                    throw new Error('Failed to get password hash');
+                                }
+
+                                const data = await response.json();
+                                // Store the password hash in localStorage
+                                localStorage.setItem('password_hash', data.password_hash);
+                            } catch (error) {
+                                console.error('Error getting password hash:', error);
+                                throw error;
+                            }
+
+                            await chat.initialize(chatId, otherUserId);
                         });
-                        
-                        if (!chatId || !otherUserId) {
-                            console.error('Missing required chat data:', { chatId, otherUserId });
-                            return;
-                        }
-                        
-                        // Clear the placeholder and set up chat UI
-                        const chatContainer = document.getElementById('chat-container');
-                        chatContainer.innerHTML = `
-                            <div class="chat-messages"></div>
-                            <div class="chat-input">
-                                <textarea placeholder="Type your message..." rows="3"></textarea>
-                                <button class="send-button">Send</button>
-                            </div>
-                        `;
-                        
-                        // Initialize the chat only when a chat is selected
-                        const chat = new Chat('chat-container');
-                        await chat.initialize(chatId, otherUserId);
                     });
-                });
-            } else {
-                messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
+                } else {
+                    messagesList.innerHTML = '<div class="no-messages">No messages yet</div>';
+                }
+
+            } catch (error) {
+                console.error('Error accessing messages:', error);
+                contentDiv.innerHTML = `
+                    <div class="error-message">
+                        ${error.message}
+                    </div>
+                `;
             }
 
         } catch (error) {

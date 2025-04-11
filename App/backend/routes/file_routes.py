@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from utils.s3_utils import upload_file_to_s3, generate_presigned_url, delete_file_from_s3, get_file_from_s3
 from utils.auth_utils import token_required
+from utils.audit_logger import log_security_event
 import urllib.parse
 import io
 
@@ -25,10 +26,22 @@ def upload_file(current_user):
     Requires authentication.
     """
     if 'files' not in request.files:
+        log_security_event(
+            event_type='document_upload',
+            user_id=current_user.id,
+            status='failure',
+            details={'reason': 'no_file_part'}
+        )
         return jsonify({'error': 'No file part'}), 400
     
     files = request.files.getlist('files')
     if not files or files[0].filename == '':
+        log_security_event(
+            event_type='document_upload',
+            user_id=current_user.id,
+            status='failure',
+            details={'reason': 'no_selected_file'}
+        )
         return jsonify({'error': 'No selected file'}), 400
     
     # Check total size
@@ -37,11 +50,30 @@ def upload_file(current_user):
         file.seek(0)  # Reset file pointers after reading
     
     if total_size > MAX_TOTAL_SIZE:
+        log_security_event(
+            event_type='document_upload',
+            user_id=current_user.id,
+            status='failure',
+            details={
+                'reason': 'total_size_exceeded',
+                'size': total_size,
+                'limit': MAX_TOTAL_SIZE
+            }
+        )
         return jsonify({'error': 'Total file size exceeds 50MB limit'}), 400
     
     uploaded_files = []
     for file in files:
         if not allowed_file(file.filename):
+            log_security_event(
+                event_type='document_upload',
+                user_id=current_user.id,
+                status='failure',
+                details={
+                    'filename': file.filename,
+                    'reason': 'file_type_not_allowed'
+                }
+            )
             return jsonify({'error': f'File type not allowed for {file.filename}'}), 400
         
         # Check individual file size
@@ -50,6 +82,17 @@ def upload_file(current_user):
         file.seek(0)
         
         if file_size > MAX_FILE_SIZE:
+            log_security_event(
+                event_type='document_upload',
+                user_id=current_user.id,
+                status='failure',
+                details={
+                    'filename': file.filename,
+                    'size': file_size,
+                    'limit': MAX_FILE_SIZE,
+                    'reason': 'file_size_exceeded'
+                }
+            )
             return jsonify({'error': f'File {file.filename} exceeds 10MB limit'}), 400
         
         # Generate unique filename
@@ -70,10 +113,32 @@ def upload_file(current_user):
                 'stored_name': unique_filename,
                 'url': result['url']
             })
+            # Log successful upload
+            log_security_event(
+                event_type='document_upload',
+                user_id=current_user.id,
+                status='success',
+                details={
+                    'document_name': original_filename,
+                    'document_type': file.content_type,
+                    'invention_id': unique_filename.split('/')[1] if len(unique_filename.split('/')) > 1 else 'N/A',
+                    'size': file_size
+                }
+            )
         else:
             # If any file fails, delete the previously uploaded files
             for uploaded_file in uploaded_files:
                 delete_file_from_s3(uploaded_file['stored_name'])
+            # Log upload failure
+            log_security_event(
+                event_type='document_upload',
+                user_id=current_user.id,
+                status='failure',
+                details={
+                    'filename': original_filename,
+                    'reason': result['message']
+                }
+            )
             return jsonify({'error': f'Error uploading {file.filename}: {result["message"]}'}), 500
     
     return jsonify({
@@ -110,6 +175,13 @@ def get_file(current_user, filename):
         
         if not file_data:
             print("File not found in S3 or file is empty")
+            # Log failed access attempt
+            log_security_event(
+                event_type='document_access',
+                user_id=current_user.id,
+                status='failure',
+                details={'filename': filename, 'reason': 'file_not_found'}
+            )
             return jsonify({'error': 'File not found or is empty'}), 404
             
         print("Successfully retrieved file from S3")
@@ -124,6 +196,18 @@ def get_file(current_user, filename):
         # Get the original filename from the S3 key
         original_filename = decoded_filename.split('/')[-1]
         print(f"Original filename: {original_filename}")
+        
+        # Log successful access
+        log_security_event(
+            event_type='document_access',
+            user_id=current_user.id,
+            status='success',
+            details={
+                'document_name': original_filename,
+                'document_type': content_type,
+                'invention_id': decoded_filename.split('/')[1] if len(decoded_filename.split('/')) > 1 else 'N/A'
+            }
+        )
         
         # Stream the file to the client
         print("Streaming file to client...")
@@ -144,6 +228,18 @@ def get_file(current_user, filename):
         import traceback
         print(f"Traceback: {traceback.format_exc()}")
         print("=== End File Request Error Logs ===\n")
+        
+        # Log error
+        log_security_event(
+            event_type='document_access',
+            user_id=current_user.id,
+            status='failure',
+            details={
+                'filename': filename,
+                'reason': str(e),
+                'error_type': type(e).__name__
+            }
+        )
         return jsonify({'error': str(e)}), 500
 
 @file_bp.route('/files/<filename>', methods=['DELETE'])
@@ -153,9 +249,44 @@ def delete_file(current_user, filename):
     Delete a file from S3.
     Requires authentication.
     """
-    result = delete_file_from_s3(filename)
-    if result['success']:
-        return jsonify({
-            'message': 'File deleted successfully'
-        }), 200
-    return jsonify({'error': result['message']}), 500 
+    try:
+        result = delete_file_from_s3(filename)
+        if result['success']:
+            # Log successful deletion
+            log_security_event(
+                event_type='document_delete',
+                user_id=current_user.id,
+                status='success',
+                details={
+                    'document_name': filename.split('/')[-1],
+                    'invention_id': filename.split('/')[1] if len(filename.split('/')) > 1 else 'N/A'
+                }
+            )
+            return jsonify({
+                'message': 'File deleted successfully'
+            }), 200
+        
+        # Log failed deletion
+        log_security_event(
+            event_type='document_delete',
+            user_id=current_user.id,
+            status='failure',
+            details={
+                'filename': filename,
+                'reason': result['message']
+            }
+        )
+        return jsonify({'error': result['message']}), 500
+    except Exception as e:
+        # Log error during deletion
+        log_security_event(
+            event_type='document_delete',
+            user_id=current_user.id,
+            status='failure',
+            details={
+                'filename': filename,
+                'reason': str(e),
+                'error_type': type(e).__name__
+            }
+        )
+        return jsonify({'error': str(e)}), 500 

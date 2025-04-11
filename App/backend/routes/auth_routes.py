@@ -12,6 +12,7 @@ import hashlib
 import os
 from base64 import b64encode
 from dotenv import load_dotenv
+from utils.audit_logger import log_security_event
 
 # Load environment variables
 load_dotenv()
@@ -115,6 +116,11 @@ def login():
     user = User.query.filter_by(email=data['email']).first()
     
     if not user:
+        log_security_event(
+            event_type='login_attempt',
+            status='failure',
+            details={'email': data['email'], 'reason': 'user_not_found'}
+        )
         return jsonify({'message': 'Invalid email or password'}), 401
     
     # Check if account is locked
@@ -122,6 +128,12 @@ def login():
         time_since_last_attempt = datetime.now(timezone.utc) - user.last_login_attempt
         if time_since_last_attempt < timedelta(minutes=LOGIN_TIMEOUT_MINUTES):
             remaining_time = LOGIN_TIMEOUT_MINUTES - (time_since_last_attempt.seconds // 60)
+            log_security_event(
+                event_type='account_lock',
+                user_id=user.id,
+                status='warning',
+                details={'remaining_time': remaining_time}
+            )
             return jsonify({
                 'message': f'Too many login attempts. Account locked. Please try again in {remaining_time} minutes.'
             }), 429
@@ -136,7 +148,20 @@ def login():
         user.last_login_attempt = datetime.now(timezone.utc)
         db.session.commit()
         
+        log_security_event(
+            event_type='login_attempt',
+            user_id=user.id,
+            status='failure',
+            details={'attempts': user.login_attempts}
+        )
+        
         if user.login_attempts >= MAX_LOGIN_ATTEMPTS:
+            log_security_event(
+                event_type='account_lock',
+                user_id=user.id,
+                status='warning',
+                details={'lockout_duration': LOGIN_TIMEOUT_MINUTES}
+            )
             return jsonify({
                 'message': f'Too many login attempts. Account locked for {LOGIN_TIMEOUT_MINUTES} minutes.'
             }), 429
@@ -147,6 +172,13 @@ def login():
     user.login_attempts = 0
     user.last_login = datetime.now(timezone.utc)
     db.session.commit()
+    
+    # Log successful login
+    log_security_event(
+        event_type='login_attempt',
+        user_id=user.id,
+        status='success'
+    )
     
     # Create access token with string user ID
     access_token = create_access_token(identity=str(user.id))
@@ -203,22 +235,24 @@ def update_profile():
 @auth_bp.route('/password-hash', methods=['POST'])
 @jwt_required()
 def get_password_hash():
-    data = request.get_json()
-    password = data.get('password')
-    
-    if not password:
-        return jsonify({'message': 'Password is required'}), 400
-    
-    # Get the current user
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
-    
-    # Generate the hash using the same method as during registration
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), user.password_hash.encode('utf-8'))
-    
-    return jsonify({
-        'password_hash': hashed_password.decode('utf-8')
-    }), 200 
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'error': 'Password is required'}), 400
+            
+        user = User.query.get(current_user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        # Verify the password
+        if not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            return jsonify({'error': 'Invalid password'}), 401
+            
+        # Return the password hash
+        return jsonify({'password_hash': user.password_hash}), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500 

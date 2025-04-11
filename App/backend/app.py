@@ -11,8 +11,9 @@ from routes.file_routes import file_bp
 from routes.notification_routes import notification_bp
 from routes.message_routes import message_bp
 from routes.key_routes import key_bp
+from routes.admin_routes import admin_bp
 from database import db
-from models import User, Invention, Document, AccessRequest, Notification, Chat, Message, ChatParticipant, ChatKey
+from models import User, Invention, Document, AccessRequest, Notification, Chat, Message, ChatParticipant, ChatKey, AuditLog
 
 # Load environment variables
 load_dotenv()
@@ -104,6 +105,7 @@ app.register_blueprint(file_bp, url_prefix='/api/files')
 app.register_blueprint(notification_bp, url_prefix='/api/notification')
 app.register_blueprint(message_bp, url_prefix='/api/messages')
 app.register_blueprint(key_bp, url_prefix='/api/keys')
+app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
 # Create database tables
 with app.app_context():

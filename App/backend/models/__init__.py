@@ -12,6 +12,7 @@ from .chat import Chat
 from .message import Message
 from .chat_participant import ChatParticipant
 from .chat_key import ChatKey
+from .audit_log import AuditLog
 
 # Import order matters - make sure models are imported in the correct order
 # to avoid circular dependencies
@@ -24,5 +25,6 @@ __all__ = [
     'Chat',
     'Message',
     'ChatParticipant',
-    'ChatKey'
+    'ChatKey',
+    'AuditLog'
 ] 
