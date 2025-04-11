@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 import bcrypt
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from models.user import User
 from database import db
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -11,6 +11,14 @@ from cryptography.hazmat.primitives import padding
 import hashlib
 import os
 from base64 import b64encode
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Get rate limiting configuration
+MAX_LOGIN_ATTEMPTS = int(os.getenv('MAX_LOGIN_ATTEMPTS', 5))
+LOGIN_TIMEOUT_MINUTES = int(os.getenv('LOGIN_TIMEOUT_MINUTES', 15))
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -109,12 +117,30 @@ def login():
     if not user:
         return jsonify({'message': 'Invalid email or password'}), 401
     
+    # Check if account is locked
+    if user.login_attempts >= MAX_LOGIN_ATTEMPTS and user.last_login_attempt:
+        time_since_last_attempt = datetime.now(timezone.utc) - user.last_login_attempt
+        if time_since_last_attempt < timedelta(minutes=LOGIN_TIMEOUT_MINUTES):
+            remaining_time = LOGIN_TIMEOUT_MINUTES - (time_since_last_attempt.seconds // 60)
+            return jsonify({
+                'message': f'Too many login attempts. Account locked. Please try again in {remaining_time} minutes.'
+            }), 429
+        else:
+            # Reset attempts if lockout period has expired
+            user.login_attempts = 0
+    
     # Verify password
     if not bcrypt.checkpw(data['password'].encode('utf-8'), user.password_hash.encode('utf-8')):
         # Update login attempt count
         user.login_attempts += 1
         user.last_login_attempt = datetime.now(timezone.utc)
         db.session.commit()
+        
+        if user.login_attempts >= MAX_LOGIN_ATTEMPTS:
+            return jsonify({
+                'message': f'Too many login attempts. Account locked for {LOGIN_TIMEOUT_MINUTES} minutes.'
+            }), 429
+        
         return jsonify({'message': 'Invalid email or password'}), 401
     
     # Reset login attempts on successful login
